@@ -24,15 +24,6 @@
   .approach { gap: 7%; }
   .approach .dance-photo { height: 480px; }
   .planning ol { margin-top: 36px; }
-  #equipment { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.25fr); column-gap: 48px; align-items: center; }
-  #equipment .section-heading { grid-column: 1; grid-row: 1; align-self: end; }
-  #equipment > figure { grid-column: 2; grid-row: 1 / 3; }
-  #equipment > figure img { aspect-ratio: 3 / 2; object-fit: cover; }
-  #equipment > div { grid-column: 1; grid-row: 2; align-self: start; }
-  header { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
-  header > .brand { text-align: left; }
-  header nav { display: flex; gap: 22px; font-size: 13px; color: #c2c9bd; }
-  header nav a:hover { color: #b6ff35; }
   footer { margin-inline: auto; }
 }
 /* Keep the Homecoming introduction together on every screen size. */
