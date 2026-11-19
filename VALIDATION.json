@@ -1,8 +1,10 @@
 {
   "date": "2026-11-18",
-  "html_references_checked": 65,
+  "html_references_checked": 76,
   "gig_log_photos": 25,
   "missing_files": [],
   "live_site_changed": false,
-  "inquiry_form": "disabled pending new-host delivery connection"
+  "inquiry_form": "disabled pending new-host delivery connection",
+  "gallery_loading_fixed": true,
+  "design_system_updated": true
 }
