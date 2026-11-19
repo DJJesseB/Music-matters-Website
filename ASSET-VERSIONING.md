@@ -1,0 +1,1 @@
+Stylesheets and JavaScript modules now use content-based version filenames to prevent browsers mixing an old design with new HTML. Keep the supplied filenames and references together. asset-versions.json maps the original names to their release names. Regenerate versions whenever these assets change. The editable source remains in the working preview.
