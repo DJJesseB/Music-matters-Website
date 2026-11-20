@@ -15,7 +15,8 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
     app.innerHTML = head(
       'QUICK INSTALLATION & SETUP',
       'Welcome to DJ Live Request Desk',
-      'Configure your database and administrator account. These settings can also be updated anytime from the Admin Settings workspace.'
+      'Configure your database and administrator account. These settings can also be updated anytime from the Admin Settings workspace.',
+      '<a class="button secondary" href="../" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-weight:700;color:#b6ff35;padding:10px 16px;border:1px solid #64734e;border-radius:8px;">← Return to Main Website</a>'
     ) + `
     <form id="setupWizard" class="setup-wizard-card">
       <fieldset>
@@ -561,5 +562,150 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
     if (topBtn) topBtn.onclick = saveHandler;
   }
 
-  return { wizard, settings };
+  function dbRecovery(initialStatus = {}) {
+    const defaultDriver = initialStatus.db?.driver || 'mysql';
+    const db = initialStatus.db || {};
+    const dbError = initialStatus.dbError || 'Could not connect to database.';
+
+    app.innerHTML = head(
+      'DATABASE CONNECTION',
+      'Database Connection Required',
+      'DJ Desk is configured, but the database server could not be reached. Review your database credentials below or test the connection.',
+      '<a class="button secondary" href="../" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-weight:700;color:#b6ff35;padding:10px 16px;border:1px solid #64734e;border-radius:8px;">← Return to Main Website</a>'
+    ) + `
+    <div class="setup-wizard-card">
+      <div class="test-result error" style="margin-bottom:24px;display:block;padding:16px;border-radius:8px;background:rgba(255,80,80,0.1);border:1px solid #ff5050;">
+        <strong style="color:#ff6b6b;display:block;margin-bottom:6px;">Database Connection Error:</strong>
+        <code style="word-break:break-all;color:#ffb0b0;">${esc(dbError)}</code>
+        <p style="margin:10px 0 0;font-size:13px;color:#d0d0d0;">Tip: If using MySQL on a Linux server and <code>localhost</code> fails with error 2002, try setting Database Host to <code>127.0.0.1</code>.</p>
+      </div>
+
+      <form id="dbRecoveryForm">
+        <fieldset>
+          <legend>Update Database Connection</legend>
+          <div class="grid">
+            <label>Driver
+              <input type="text" name="driver" value="${esc(defaultDriver)}" readonly style="opacity:0.8;">
+            </label>
+            <label>Database Host *
+              <input type="text" name="db_host" value="${esc(db.host || 'localhost')}" required>
+            </label>
+            <label>Port
+              <input type="number" name="db_port" value="${esc(db.port || 3306)}" required>
+            </label>
+            <label>Database Name *
+              <input type="text" name="db_name" value="${esc(db.name || '')}" required>
+            </label>
+            <label>Database User *
+              <input type="text" name="db_user" value="${esc(db.user || '')}" required>
+            </label>
+            <label>Database Password
+              <input type="password" name="db_pass" placeholder="${db.hasPassword ? '(Saved password kept if blank)' : 'Enter database password'}">
+            </label>
+            <label>Table Prefix
+              <input type="text" name="db_prefix" value="${esc(db.prefix || 'dj_')}">
+            </label>
+          </div>
+
+          <div style="margin-top: 22px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <button type="button" id="btnTestRecoveryDb" class="button secondary">Test Connection</button>
+            <button type="submit" id="btnSaveRecovery" class="button">Save & Reconnect →</button>
+            <button type="button" id="btnRetryNow" class="button secondary">Retry Connection</button>
+          </div>
+          <div id="recoveryTestResult" class="test-result" hidden style="margin-top:14px;"></div>
+        </fieldset>
+      </form>
+    </div>`;
+
+    const form = document.querySelector('#dbRecoveryForm');
+    const testBtn = document.querySelector('#btnTestRecoveryDb');
+    const testResult = document.querySelector('#recoveryTestResult');
+    const retryBtn = document.querySelector('#btnRetryNow');
+
+    if (retryBtn) {
+      retryBtn.onclick = () => window.location.reload();
+    }
+
+    testBtn.onclick = async () => {
+      const dbPayload = {
+        driver: defaultDriver,
+        host: form.elements.db_host?.value || 'localhost',
+        port: Number(form.elements.db_port?.value || 3306),
+        name: form.elements.db_name?.value || '',
+        user: form.elements.db_user?.value || '',
+        pass: form.elements.db_pass?.value || '',
+        prefix: form.elements.db_prefix?.value || 'dj_'
+      };
+
+      testResult.hidden = false;
+      testResult.className = 'test-result testing';
+      testResult.textContent = 'Testing connection...';
+      testBtn.disabled = true;
+
+      try {
+        const res = await api('setup/test-db', 'POST', { db: dbPayload });
+        if (res.ok) {
+          testResult.className = 'test-result success';
+          testResult.textContent = '✓ ' + (res.message || 'Connection verified successfully!');
+          if (res.workingHost && res.workingHost !== form.elements.db_host.value) {
+            form.elements.db_host.value = res.workingHost;
+          }
+        } else {
+          testResult.className = 'test-result error';
+          testResult.textContent = '✕ ' + (res.error || 'Connection failed.');
+        }
+      } catch (err) {
+        testResult.className = 'test-result error';
+        testResult.textContent = '✕ ' + (err.message || 'Connection failed.');
+      } finally {
+        testBtn.disabled = false;
+      }
+    };
+
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const saveBtn = document.querySelector('#btnSaveRecovery');
+      saveBtn.disabled = true;
+      testResult.hidden = false;
+      testResult.className = 'test-result testing';
+      testResult.textContent = 'Testing connection and saving...';
+
+      const payload = {
+        db: {
+          driver: defaultDriver,
+          host: form.elements.db_host?.value || 'localhost',
+          port: Number(form.elements.db_port?.value || 3306),
+          name: form.elements.db_name?.value || '',
+          user: form.elements.db_user?.value || '',
+          pass: form.elements.db_pass?.value || '',
+          prefix: form.elements.db_prefix?.value || 'dj_'
+        },
+        admin: {
+          email: initialStatus.admin?.email || 'admin@example.com'
+        },
+        brand: initialStatus.brand || {},
+        seed_demo: false
+      };
+
+      try {
+        const res = await api('setup/save', 'POST', payload);
+        testResult.className = 'test-result success';
+        testResult.textContent = '✓ Connected successfully! Launching...';
+        message('Database reconnected successfully.');
+        setTimeout(() => {
+          if (onComplete && res.session) {
+            onComplete(res.session);
+          } else {
+            window.location.reload();
+          }
+        }, 600);
+      } catch (err) {
+        testResult.className = 'test-result error';
+        testResult.textContent = '✕ ' + (err.message || 'Save failed.');
+        saveBtn.disabled = false;
+      }
+    };
+  }
+
+  return { wizard, dbRecovery, settings };
 }

@@ -32,6 +32,7 @@ register_shutdown_function(function () {
 
 // Load configurations and classes
 $configFile = dirname(__DIR__) . '/config.php';
+clearstatcache(true, $configFile);
 $config = file_exists($configFile) ? require $configFile : [];
 
 require_once __DIR__ . '/Database.php';
@@ -53,15 +54,23 @@ if (!empty($config['configured'])) {
 function save_config_file(array $cfg): array {
     $configFile = dirname(__DIR__) . '/config.php';
     $dir = dirname($configFile);
+    if (file_exists($configFile) && !is_writable($configFile)) {
+        @chmod($configFile, 0666);
+    }
     if (!is_writable($dir) && !is_writable($configFile)) {
         return ['ok' => false, 'error' => "Cannot write to config.php. Please check write permissions on folder: $dir"];
     }
     $export = "<?php\n/**\n * DJ Live Request Desk & Event Manager - Active Configuration\n */\n\nreturn " . var_export($cfg, true) . ";\n";
-    $bytes = @file_put_contents($configFile, $export);
+    $bytes = @file_put_contents($configFile, $export, LOCK_EX);
     if ($bytes === false) {
         $lastErr = error_get_last();
         return ['ok' => false, 'error' => "Failed to write config.php: " . ($lastErr['message'] ?? 'Permission denied')];
     }
+    @chmod($configFile, 0666);
+    if (function_exists('opcache_invalidate')) {
+        @opcache_invalidate($configFile, true);
+    }
+    clearstatcache(true, $configFile);
     return ['ok' => true];
 }
 
@@ -213,6 +222,8 @@ if ($path === 'setup/save' && $method === 'POST') {
             json_error($test['error'] ?? 'Database connection test failed');
         }
 
+        $workingHost = $test['workingHost'] ?? ($db['host'] ?? 'localhost');
+
         $adminEmail = strtolower(trim($input['admin']['email'] ?? ($config['admin']['email'] ?? 'admin@example.com')));
         $adminPassword = trim($input['admin']['password'] ?? '');
         if (!$isConfigured && empty($adminPassword)) {
@@ -246,7 +257,7 @@ if ($path === 'setup/save' && $method === 'POST') {
             'configured' => true,
             'db' => [
                 'driver'   => $db['driver'],
-                'host'     => $db['host'] ?? 'localhost',
+                'host'     => $workingHost,
                 'port'     => (int)($db['port'] ?? 3306),
                 'name'     => $db['name'] ?? '',
                 'user'     => $db['user'] ?? '',
@@ -295,9 +306,9 @@ if ($path === 'setup/save' && $method === 'POST') {
             DJ_Database::update($users_table, ['email' => $adminEmail], ['id' => $existingAdmin['id']]);
         }
 
-        // Seed demo data if requested
-        if (!empty($input['seed_demo'])) {
-            DJ_Database::seed_initial_data(true);
+        // Seed demo data only if requested and initial installation (never wipe an already configured desk)
+        if (!empty($input['seed_demo']) && !$isConfigured) {
+            DJ_Database::seed_initial_data(false);
         }
 
         // Auto-login
@@ -387,8 +398,9 @@ if ($path === 'admin/settings' && $method === 'PUT') {
         DJ_Database::update($users_table, ['password' => $hashed], ['id' => $adminId]);
     }
 
-    if (!save_config_file($newConfig)) {
-        json_error('Unable to save settings to config.php', 500);
+    $saveRes = save_config_file($newConfig);
+    if (!$saveRes['ok']) {
+        json_error($saveRes['error'] ?? 'Unable to save settings to config.php', 500);
     }
 
     json_response(['ok' => true, 'message' => 'Settings saved successfully.']);

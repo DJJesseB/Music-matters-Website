@@ -10,7 +10,7 @@ import {mountPackageEditor} from './package-ui.js?v=180';
 import {formMessage,installFormValidation} from './form-feedback.js?v=180';
 import {timeField,bindTimeFields} from './time-input.js?v=180';
 import {portalUI} from './portal-ui.js?v=184';
-import {setupUI} from './setup-ui.js?v=185';
+import {setupUI} from './setup-ui.js?v=201';
 const app=document.querySelector('#app'),notice=document.querySelector('#notice');
 let auth={user:null};
 let events=[],requests=[],options={},dirty=false,tab='overview';
@@ -59,5 +59,5 @@ function shell(){const nav=document.querySelector('nav');const homeLink='<a href
 let previous=location.hash||'#dashboard',ignoring=false;
 async function route(){if(ignoring){ignoring=false;return;}if(dirty&&!confirm('Leave this event and discard unsaved changes?')){ignoring=true;location.hash=previous;return;}dirty=false;previous=location.hash||'#dashboard';message('');const hash=location.hash||'#dashboard';music.stop();document.body.classList.toggle('guest-music-page',hash.startsWith('#music/'));if(hash.startsWith('#music/')){await music.guest(hash.slice(7));return;}if(hash.startsWith('#invite/')){portal.login(hash.slice(8));return;}if(hash==='#inquire'||hash.startsWith('#inquire/')){await booking.intake(hash.split('/')[1]||'');return;}if(!auth.user){portal.login();return;}document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('active',a.hash===hash));try{if(auth.user.role==='client'){if(hash.startsWith('#portal/'))await portal.plan(hash.slice(8));else await portal.home();return;}if(hash==='#requests'){await booking.requests();return;}if(hash==='#settings'){await setup.settings();return;}if(hash.startsWith('#client-plan/')){await portal.plan(hash.slice(13).split('?')[0],true);return;}if(hash==='#music-admin'){await music.events();return;}if(hash.startsWith('#music-admin/')){await music.queue(hash.slice(13));return;}events=await api('events');requests=await api('admin/requests');if(hash==='#new')editor();else if(hash==='#events')list();else if(hash.startsWith('#event/')){const e=await api('events/'+hash.slice(7));editor(e);}else dashboard();}catch(err){if(auth.user)app.innerHTML='<div class="empty"><h1>Unable to open this workspace</h1><p>Refresh or choose another event.</p></div>';message(err.message,true,err.field);}}
 window.addEventListener('hashchange',route);window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
-try{const status=await api('setup/status');if(!status.configured||!status.dbConnected){setup.wizard(status);}else{auth=await api('auth/me');shell();if(auth.user?.role==='admin')options=await api('options');await route();}}catch(err){message(err.message,true,err.field);}
+try{const status=await api('setup/status');if(!status.configured){setup.wizard(status);}else if(!status.dbConnected){setup.dbRecovery(status);}else{auth=await api('auth/me');shell();if(auth.user?.role==='admin')options=await api('options');await route();}}catch(err){message(err.message,true,err.field);}
 

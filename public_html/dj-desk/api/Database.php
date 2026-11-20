@@ -42,18 +42,49 @@ class DJ_Database {
                 self::$pdo->exec('PRAGMA foreign_keys = ON;');
             } else {
                 $host = $db['host'] ?? 'localhost';
-                $port = $db['port'] ?? 3306;
+                $port = (int)($db['port'] ?? 3306);
                 $name = $db['name'] ?? 'dj_desk';
                 $user = $db['user'] ?? 'root';
                 $pass = $db['pass'] ?? '';
                 $charset = $db['charset'] ?? 'utf8mb4';
 
                 $dsn = "mysql:host=$host;port=$port;dbname=$name;charset=$charset";
-                self::$pdo = new PDO($dsn, $user, $pass, [
+                $options = [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                     PDO::ATTR_EMULATE_PREPARES => false
-                ]);
+                ];
+
+                try {
+                    self::$pdo = new PDO($dsn, $user, $pass, $options);
+                } catch (PDOException $e) {
+                    $is2002 = ($e->getCode() === 2002 || strpos($e->getMessage(), '2002') !== false || stripos($e->getMessage(), 'No such file or directory') !== false);
+                    $connected = false;
+                    if ($is2002 && ($host === 'localhost' || $host === '127.0.0.1')) {
+                        $altHost = ($host === 'localhost') ? '127.0.0.1' : 'localhost';
+                        try {
+                            $altDsn = "mysql:host=$altHost;port=$port;dbname=$name;charset=$charset";
+                            self::$pdo = new PDO($altDsn, $user, $pass, $options);
+                            $connected = true;
+                        } catch (\Throwable $e2) {
+                            $knownSockets = ['/var/run/mysqld/mysqld.sock', '/tmp/mysql.sock', '/var/lib/mysql/mysql.sock', '/run/mysqld/mysqld.sock'];
+                            foreach ($knownSockets as $sock) {
+                                if (file_exists($sock)) {
+                                    try {
+                                        $sockDsn = "mysql:unix_socket=$sock;dbname=$name;charset=$charset";
+                                        self::$pdo = new PDO($sockDsn, $user, $pass, $options);
+                                        $connected = true;
+                                        break;
+                                    } catch (\Throwable $e3) {}
+                                }
+                            }
+                        }
+                    }
+                    if (!$connected) {
+                        self::$pdo = null;
+                        throw $e;
+                    }
+                }
             }
         } catch (PDOException $e) {
             self::$pdo = null;
@@ -103,11 +134,37 @@ class DJ_Database {
                 }
 
                 $dsn = "mysql:host=$host;port=$port;dbname=$name;charset=$charset";
-                $pdo = new PDO($dsn, $user, $pass, [
+                $options = [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_TIMEOUT => 5
-                ]);
-                return ['ok' => true, 'message' => 'Successfully connected to MySQL database on ' . $host . '!'];
+                ];
+
+                try {
+                    $pdo = new PDO($dsn, $user, $pass, $options);
+                    return ['ok' => true, 'workingHost' => $host, 'message' => 'Successfully connected to MySQL database on ' . $host . '!'];
+                } catch (\Throwable $e) {
+                    $is2002 = ($e->getCode() === 2002 || strpos($e->getMessage(), '2002') !== false || stripos($e->getMessage(), 'No such file or directory') !== false);
+                    if ($is2002 && ($host === 'localhost' || $host === '127.0.0.1')) {
+                        $altHost = ($host === 'localhost') ? '127.0.0.1' : 'localhost';
+                        try {
+                            $altDsn = "mysql:host=$altHost;port=$port;dbname=$name;charset=$charset";
+                            $pdo = new PDO($altDsn, $user, $pass, $options);
+                            return ['ok' => true, 'workingHost' => $altHost, 'message' => "Successfully connected to MySQL database via $altHost!"];
+                        } catch (\Throwable $e2) {
+                            $knownSockets = ['/var/run/mysqld/mysqld.sock', '/tmp/mysql.sock', '/var/lib/mysql/mysql.sock', '/run/mysqld/mysqld.sock'];
+                            foreach ($knownSockets as $sock) {
+                                if (file_exists($sock)) {
+                                    try {
+                                        $sockDsn = "mysql:unix_socket=$sock;dbname=$name;charset=$charset";
+                                        $pdo = new PDO($sockDsn, $user, $pass, $options);
+                                        return ['ok' => true, 'workingHost' => $host, 'message' => "Successfully connected to MySQL database via $sock!"];
+                                    } catch (\Throwable $e3) {}
+                                }
+                            }
+                        }
+                    }
+                    return ['ok' => false, 'error' => $e->getMessage()];
+                }
             }
         } catch (\Throwable $e) {
             return ['ok' => false, 'error' => $e->getMessage()];
@@ -247,7 +304,11 @@ class DJ_Database {
             // Not installed yet
         }
 
-        self::create_tables();
+        try {
+            self::create_tables();
+        } catch (\Throwable $e) {
+            error_log("DJ_Database ensure_installed non-fatal: " . $e->getMessage());
+        }
     }
 
     public static function create_tables(): void {

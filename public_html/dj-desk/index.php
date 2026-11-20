@@ -49,7 +49,7 @@ if (!empty($config['configured'])) {
             tipLink: <?php echo json_encode($tipLink); ?>
         };
     </script>
-    <script type="module" src="./app.js?v=200"></script>
+    <script type="module" src="./app.js?v=201"></script>
 </head>
 <body>
     <aside>
