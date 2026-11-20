@@ -10,7 +10,7 @@ import {mountPackageEditor} from './package-ui.js?v=180';
 import {formMessage,installFormValidation} from './form-feedback.js?v=180';
 import {timeField,bindTimeFields} from './time-input.js?v=180';
 import {portalUI} from './portal-ui.js?v=184';
-import {setupUI} from './setup-ui.js?v=201';
+import {setupUI} from './setup-ui.js?v=203';
 const app=document.querySelector('#app'),notice=document.querySelector('#notice');
 let auth={user:null};
 let events=[],requests=[],options={},dirty=false,tab='overview';

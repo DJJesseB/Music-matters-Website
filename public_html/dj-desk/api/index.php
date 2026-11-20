@@ -334,14 +334,20 @@ if ($path === 'setup/save' && $method === 'POST') {
 
 if ($path === 'admin/settings' && $method === 'GET') {
     require_db();
-    require_admin();
+    $session = require_admin();
     $safeDb = $config['db'] ?? [];
     unset($safeDb['pass']);
     $safeDb['hasPassword'] = !empty($config['db']['pass']);
+
+    $users_table = DJ_Database::get_table_name('users');
+    $adminUsers = DJ_Database::get_results("SELECT id, email, role FROM $users_table WHERE role = 'admin' ORDER BY email ASC");
+
     json_response([
         'db'               => $safeDb,
         'availableDrivers' => PDO::getAvailableDrivers(),
-        'admin'            => ['email' => $config['admin']['email'] ?? 'admin@example.com'],
+        'admin'            => ['email' => $session['user']['email'] ?? ($config['admin']['email'] ?? 'admin@example.com')],
+        'adminUsers'       => $adminUsers,
+        'currentAdminId'   => $session['user']['id'] ?? '',
         'brand'            => $config['brand'] ?? [],
         'security'         => $config['security'] ?? [],
         'stripe'           => [
@@ -356,7 +362,7 @@ if ($path === 'admin/settings' && $method === 'GET') {
 
 if ($path === 'admin/settings' && $method === 'PUT') {
     require_db();
-    require_admin();
+    $session = require_admin();
 
     $newConfig = $config;
     if (isset($input['brand'])) {
@@ -388,11 +394,20 @@ if ($path === 'admin/settings' && $method === 'PUT') {
         $newConfig['stripe'] = $newStripe;
     }
     if (!empty($input['admin']['email'])) {
-        $newConfig['admin']['email'] = strtolower(trim($input['admin']['email']));
+        $newEmail = strtolower(trim($input['admin']['email']));
+        $users_table = DJ_Database::get_table_name('users');
+        $adminId = $session['user']['id'];
+        $existing = DJ_Database::get_row("SELECT id FROM $users_table WHERE email = ? AND id != ?", [$newEmail, $adminId]);
+        if ($existing) {
+            json_error('Another user already exists with that email address.', 409, 'admin_email');
+        }
+        DJ_Database::update($users_table, ['email' => $newEmail], ['id' => $adminId]);
+        if (($config['admin']['email'] ?? '') === $session['user']['email']) {
+            $newConfig['admin']['email'] = $newEmail;
+        }
     }
     if (!empty($input['admin']['password'])) {
         $users_table = DJ_Database::get_table_name('users');
-        $session = current_session();
         $adminId = $session['user']['id'];
         $hashed = DJ_Auth::hash_password($input['admin']['password']);
         DJ_Database::update($users_table, ['password' => $hashed], ['id' => $adminId]);
@@ -404,6 +419,141 @@ if ($path === 'admin/settings' && $method === 'PUT') {
     }
 
     json_response(['ok' => true, 'message' => 'Settings saved successfully.']);
+}
+
+if ($path === 'admin/users' && $method === 'GET') {
+    require_db();
+    $session = require_admin();
+    $users_table = DJ_Database::get_table_name('users');
+    $adminUsers = DJ_Database::get_results("SELECT id, email, role FROM $users_table WHERE role = 'admin' ORDER BY email ASC");
+    json_response([
+        'users'         => $adminUsers,
+        'currentUserId' => $session['user']['id'] ?? ''
+    ]);
+}
+
+if ($path === 'admin/users' && $method === 'POST') {
+    require_db();
+    require_admin();
+    $users_table = DJ_Database::get_table_name('users');
+    $email = strtolower(trim($input['email'] ?? ''));
+    $password = trim($input['password'] ?? '');
+
+    if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        json_error('A valid email address is required.', 400, 'email');
+    }
+    if (strlen($password) < 8) {
+        json_error('Password must be at least 8 characters long.', 400, 'password');
+    }
+
+    $existing = DJ_Database::get_row("SELECT id FROM $users_table WHERE email = ?", [$email]);
+    if ($existing) {
+        json_error('A user with this email address already exists.', 409, 'email');
+    }
+
+    $id = DJ_Database::uuid();
+    $hashed = DJ_Auth::hash_password($password);
+    DJ_Database::insert($users_table, [
+        'id'       => $id,
+        'email'    => $email,
+        'password' => $hashed,
+        'role'     => 'admin'
+    ]);
+
+    json_response([
+        'ok'      => true,
+        'message' => "Administrator account for $email created successfully.",
+        'user'    => [
+            'id'    => $id,
+            'email' => $email,
+            'role'  => 'admin'
+        ]
+    ]);
+}
+
+if (preg_match('#^admin/users/([a-f0-9-]+)$#', $path, $m)) {
+    require_db();
+    $session = require_admin();
+    $targetId = $m[1];
+    $users_table = DJ_Database::get_table_name('users');
+    $target = DJ_Database::get_row("SELECT * FROM $users_table WHERE id = ? AND role = 'admin'", [$targetId]);
+    if (!$target) {
+        json_error('Administrator user not found.', 404);
+    }
+
+    if ($method === 'PUT') {
+        $updates = [];
+        $email = isset($input['email']) ? strtolower(trim($input['email'])) : null;
+        $password = isset($input['password']) ? trim($input['password']) : null;
+
+        if ($email !== null && $email !== $target['email']) {
+            if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                json_error('A valid email address is required.', 400, 'email');
+            }
+            $existing = DJ_Database::get_row("SELECT id FROM $users_table WHERE email = ? AND id != ?", [$email, $targetId]);
+            if ($existing) {
+                json_error('Another user with this email address already exists.', 409, 'email');
+            }
+            $updates['email'] = $email;
+        }
+
+        if ($password !== null && $password !== '') {
+            if (strlen($password) < 8) {
+                json_error('Password must be at least 8 characters long.', 400, 'password');
+            }
+            $updates['password'] = DJ_Auth::hash_password($password);
+        }
+
+        if (!empty($updates)) {
+            DJ_Database::update($users_table, $updates, ['id' => $targetId]);
+            if (isset($updates['email']) && ($config['admin']['email'] ?? '') === $target['email']) {
+                $config['admin']['email'] = $updates['email'];
+                save_config_file($config);
+            }
+        }
+
+        json_response([
+            'ok'      => true,
+            'message' => 'Administrator account updated successfully.',
+            'user'    => [
+                'id'    => $targetId,
+                'email' => $updates['email'] ?? $target['email'],
+                'role'  => 'admin'
+            ]
+        ]);
+    }
+
+    if ($method === 'DELETE') {
+        if ($targetId === $session['user']['id']) {
+            json_error('You cannot delete your own administrator account while logged in.', 400);
+        }
+
+        $totalAdmins = (int)DJ_Database::get_var("SELECT COUNT(*) FROM $users_table WHERE role = 'admin'");
+        if ($totalAdmins <= 1) {
+            json_error('Cannot delete the only remaining administrator account.', 400);
+        }
+
+        // Delete user sessions
+        $sessions_table = DJ_Database::get_table_name('sessions');
+        DJ_Database::delete($sessions_table, ['user_id' => $targetId]);
+
+        // Delete user
+        DJ_Database::delete($users_table, ['id' => $targetId]);
+
+        // Update default email in config if needed
+        if (($config['admin']['email'] ?? '') === $target['email']) {
+            $anotherAdmin = DJ_Database::get_row("SELECT email FROM $users_table WHERE role = 'admin' LIMIT 1");
+            if ($anotherAdmin) {
+                $config['admin']['email'] = $anotherAdmin['email'];
+                save_config_file($config);
+            }
+        }
+
+        json_response([
+            'ok'      => true,
+            'message' => 'Administrator account removed successfully.'
+        ]);
+    }
 }
 
 // -------------------------------------------------------------

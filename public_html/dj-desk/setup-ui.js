@@ -274,7 +274,7 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
     <form id="settingsForm">
       <div class="tabs" role="group" aria-label="Settings categories">
         <button type="button" class="active" data-set-tab="brand">Brand & Retainer</button>
-        <button type="button" data-set-tab="admin">Admin Account</button>
+        <button type="button" data-set-tab="admin">Admin Accounts</button>
         <button type="button" data-set-tab="database">Database</button>
         <button type="button" data-set-tab="stripe">Stripe Payments</button>
         <button type="button" data-set-tab="security">Anti-Spam & Security</button>
@@ -312,18 +312,47 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
         </fieldset>
       </section>
 
-      <!-- Tab: Admin Account -->
+      <!-- Tab: Admin Accounts -->
       <section class="card" data-settings-panel="admin" hidden>
         <fieldset>
-          <legend>Administrator Login Credentials</legend>
+          <legend>Administrator Team & Access</legend>
+          <p>Configure multiple administrator accounts. Any administrator can log in with their email and password to manage bookings, clients, music requests, invoices, and settings.</p>
+          
+          <div style="margin-top: 14px;">
+            <strong style="display:block; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--lime); margin-bottom: 10px;">Active Administrators</strong>
+            <div id="adminUsersList" style="margin-bottom: 24px;"></div>
+          </div>
+
+          <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #3a4433;">
+            <strong style="display:block; font-size: 14px; margin-bottom: 12px; color: #fff;">＋ Add Another Administrator</strong>
+            <div class="grid" style="align-items: flex-end;">
+              <label>Admin Email Address *
+                <input type="email" id="newAdminEmail" placeholder="colleague@example.com" autocomplete="off">
+              </label>
+              <label>Password * (min 8 chars)
+                <input type="password" id="newAdminPassword" placeholder="Minimum 8 characters" minlength="8" autocomplete="new-password">
+              </label>
+              <label>Confirm Password *
+                <input type="password" id="newAdminPasswordConfirm" placeholder="Confirm password" minlength="8" autocomplete="new-password">
+              </label>
+              <div style="padding-bottom: 2px;">
+                <button type="button" id="btnAddAdminUser" class="button" style="width: 100%;">Create Admin</button>
+              </div>
+            </div>
+            <div id="newAdminNotice" class="test-result" hidden style="margin-top: 12px;"></div>
+          </div>
+        </fieldset>
+
+        <fieldset style="margin-top: 28px;">
+          <legend>Your Own Login Credentials (${esc(admin.email || '')})</legend>
           <div class="grid">
-            <label>Admin Email *
+            <label>Your Email *
               <input type="email" name="admin_email" value="${esc(admin.email || '')}" required>
             </label>
             <div></div>
-            <label>New Password (Optional)
+            <label>Change Your Password (Optional)
               <input type="password" name="admin_password" placeholder="Leave blank to keep current password" minlength="8">
-              <small class="input-guidance">Only enter if you wish to change your login password.</small>
+              <small class="input-guidance">Only enter if you wish to change your own login password.</small>
             </label>
             <label>Confirm New Password
               <input type="password" name="admin_password_confirm" placeholder="Confirm new password" minlength="8">
@@ -449,6 +478,127 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
       };
     });
 
+    // Admin user management
+    function renderAdminList(users = [], currentUserId = '') {
+      const listEl = document.querySelector('#adminUsersList');
+      if (!listEl) return;
+      if (!users.length) {
+        listEl.innerHTML = '<p style="color:var(--muted);">No administrator accounts found.</p>';
+        return;
+      }
+      listEl.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${users.map(u => {
+            const isMe = u.id === currentUserId;
+            return `
+              <div class="event" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(255,255,255,0.03);border:1px solid #3a4433;border-radius:8px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <span style="font-size:16px;">👤</span>
+                  <div>
+                    <strong style="color:#fff;">${esc(u.email)}</strong>
+                    ${isMe ? '<span class="badge purple" style="margin-left:8px;font-size:11px;">You</span>' : ''}
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px;">
+                  <button type="button" class="button secondary btn-reset-admin-pass" data-user-id="${esc(u.id)}" data-user-email="${esc(u.email)}" style="padding:6px 12px;font-size:12px;">Change Password</button>
+                  ${isMe || users.length <= 1 ? '' : `<button type="button" class="button secondary btn-delete-admin" data-user-id="${esc(u.id)}" data-user-email="${esc(u.email)}" style="padding:6px 12px;font-size:12px;color:#ff6b6b;border-color:#ff6b6b;">Delete</button>`}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+
+      listEl.querySelectorAll('.btn-reset-admin-pass').forEach(btn => {
+        btn.onclick = async () => {
+          const email = btn.dataset.userEmail;
+          const uid = btn.dataset.userId;
+          const newPass = prompt(`Enter new password for ${email} (minimum 8 characters):`);
+          if (newPass === null) return;
+          if (newPass.length < 8) {
+            alert('Password must be at least 8 characters long.');
+            return;
+          }
+          try {
+            const res = await api(`admin/users/${uid}`, 'PUT', { password: newPass });
+            message(res.message || 'Password updated successfully.');
+          } catch (err) {
+            message(err.message, true);
+          }
+        };
+      });
+
+      listEl.querySelectorAll('.btn-delete-admin').forEach(btn => {
+        btn.onclick = async () => {
+          const email = btn.dataset.userEmail;
+          const uid = btn.dataset.userId;
+          if (!confirm(`Are you sure you want to delete administrator "${email}"? This will revoke their access immediately.`)) return;
+          try {
+            const res = await api(`admin/users/${uid}`, 'DELETE');
+            message(res.message || 'Administrator removed.');
+            const updated = await api('admin/users');
+            renderAdminList(updated.users, updated.currentUserId);
+          } catch (err) {
+            message(err.message, true);
+          }
+        };
+      });
+    }
+
+    renderAdminList(cfg.adminUsers || [], cfg.currentAdminId || '');
+
+    const btnAddAdmin = document.querySelector('#btnAddAdminUser');
+    const newAdminNotice = document.querySelector('#newAdminNotice');
+    if (btnAddAdmin) {
+      btnAddAdmin.onclick = async () => {
+        const emailEl = document.querySelector('#newAdminEmail');
+        const passEl = document.querySelector('#newAdminPassword');
+        const passConfirmEl = document.querySelector('#newAdminPasswordConfirm');
+        const email = emailEl.value.trim();
+        const pass = passEl.value;
+        const passConfirm = passConfirmEl.value;
+
+        if (!email || !email.includes('@')) {
+          message('Please enter a valid email address.', true);
+          emailEl.focus();
+          return;
+        }
+        if (pass.length < 8) {
+          message('Password must be at least 8 characters.', true);
+          passEl.focus();
+          return;
+        }
+        if (pass !== passConfirm) {
+          message('Passwords do not match.', true);
+          passConfirmEl.focus();
+          return;
+        }
+
+        newAdminNotice.hidden = false;
+        newAdminNotice.className = 'test-result testing';
+        newAdminNotice.textContent = 'Creating administrator...';
+        btnAddAdmin.disabled = true;
+
+        try {
+          const res = await api('admin/users', 'POST', { email, password: pass });
+          newAdminNotice.className = 'test-result success';
+          newAdminNotice.textContent = '✓ ' + (res.message || 'Administrator created successfully!');
+          emailEl.value = '';
+          passEl.value = '';
+          passConfirmEl.value = '';
+          message(res.message || 'Admin account created.');
+          const updated = await api('admin/users');
+          renderAdminList(updated.users, updated.currentUserId);
+        } catch (err) {
+          newAdminNotice.className = 'test-result error';
+          newAdminNotice.textContent = '✕ ' + err.message;
+          message(err.message, true);
+        } finally {
+          btnAddAdmin.disabled = false;
+        }
+      };
+    }
+
     // Test DB connection button
     const testBtn = document.querySelector('#btnTestDbSettings');
     const testRes = document.querySelector('#testResultSettings');
@@ -551,6 +701,12 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
         const res = await api('admin/settings', 'PUT', payload);
         statusEl.textContent = '✓ ' + (res.message || 'Settings saved successfully.');
         message('Settings updated successfully.');
+        form.elements.admin_password.value = '';
+        form.elements.admin_password_confirm.value = '';
+        try {
+          const updated = await api('admin/users');
+          renderAdminList(updated.users, updated.currentUserId);
+        } catch (e) {}
       } catch (err) {
         message(err.message, true);
         statusEl.textContent = '✕ Failed to save settings.';
