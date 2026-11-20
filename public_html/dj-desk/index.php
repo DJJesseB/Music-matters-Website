@@ -49,7 +49,7 @@ if (!empty($config['configured'])) {
             tipLink: <?php echo json_encode($tipLink); ?>
         };
     </script>
-    <script type="module" src="./app.js?v=201"></script>
+    <script type="module" src="./app.js?v=202"></script>
 </head>
 <body>
     <aside>
@@ -64,20 +64,17 @@ if (!empty($config['configured'])) {
             <a href="#new">＋ &nbsp; New booking</a>
             <a href="#requests">◇ &nbsp; Date requests</a>
             <a href="#music-admin">♫ &nbsp; Song requests</a>
-            <a href="../" style="display:flex;align-items:center;gap:8px;color:#b6ff35;font-weight:700;margin-top:12px;padding:12px 14px;border:1px solid #48513f;border-radius:8px;text-decoration:none;">← Return to Main Website</a>
         </nav>
         <div class="local">
             <i></i> DJ BOOTH &amp; CLIENT HUB
             <small><?php echo $dbConfigured ? 'Connected &amp; Synced' : 'Database Setup Needed'; ?></small>
             <div class="desk-byline" style="font-size: 11px; color: #94a3b8; margin-top: 6px; letter-spacing: 0.02em;">DJ Jesse B - Standalone Web Edition</div>
-            <a href="../" style="display:block;margin-top:10px;color:var(--lime);font-size:11px;font-weight:700;text-decoration:none;">← Return to Main Website</a>
         </div>
     </aside>
     <main>
         <header>
             <span>BUSINESS COMMAND CENTER</span>
             <div style="display:flex;align-items:center;gap:12px;">
-                <a href="../" class="button secondary desk-header-home" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;font-size:12px;font-weight:700;letter-spacing:normal;text-decoration:none;background:#242c22;border:1px solid #64734e;color:#b6ff35;border-radius:7px;">← Return to Main Website</a>
                 <span class="pill">Live Desk</span>
             </div>
         </header>
