@@ -38,6 +38,13 @@ $config = file_exists($configFile) ? require $configFile : [];
 require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/Auth.php';
 require_once __DIR__ . '/QRCode.php';
+require_once __DIR__ . '/Mailer.php';
+
+// Initialize transactional email service
+$mailConfig = $config['email'] ?? [];
+$mailConfig['admin_email'] = $config['admin']['email'] ?? 'djgourmet@me.com';
+$mailConfig['from_name'] = $mailConfig['from_name'] ?? ($config['brand']['name'] ?? 'DJ Jesse B');
+DJ_Mailer::init($mailConfig);
 
 // Try initializing DB if configured
 $dbConnected = false;
@@ -356,6 +363,16 @@ if ($path === 'admin/settings' && $method === 'GET') {
             'publishable_key'    => $config['stripe']['publishable_key'] ?? '',
             'has_secret_key'     => !empty($config['stripe']['secret_key']),
             'has_webhook_secret' => !empty($config['stripe']['webhook_secret'])
+        ],
+        'email'            => [
+            'enabled'            => !empty($config['email']['enabled']),
+            'provider'           => $config['email']['provider'] ?? 'resend',
+            'has_api_key'        => !empty($config['email']['api_key']),
+            'api_key'            => !empty($config['email']['api_key']) ? (substr($config['email']['api_key'], 0, min(7, strlen($config['email']['api_key']))) . '••••••••') : '',
+            'from_name'          => $config['email']['from_name'] ?? ($config['brand']['name'] ?? 'DJ Jesse B'),
+            'from_email'         => $config['email']['from_email'] ?? 'onboarding@resend.dev',
+            'reply_to'           => $config['email']['reply_to'] ?? ($config['admin']['email'] ?? 'djgourmet@me.com'),
+            'admin_copy'         => !empty($config['email']['admin_copy'])
         ]
     ]);
 }
@@ -393,6 +410,28 @@ if ($path === 'admin/settings' && $method === 'PUT') {
         ];
         $newConfig['stripe'] = $newStripe;
     }
+    if (isset($input['email'])) {
+        $existingEmail = $newConfig['email'] ?? [];
+        $rawKey = trim((string)($input['email']['api_key'] ?? ''));
+        $apiKey = ($rawKey === '' || strpos($rawKey, '••••') !== false)
+            ? ($existingEmail['api_key'] ?? '')
+            : $rawKey;
+
+        $newConfig['email'] = [
+            'enabled'    => !empty($input['email']['enabled']),
+            'provider'   => 'resend',
+            'api_key'    => $apiKey,
+            'from_name'  => trim((string)($input['email']['from_name'] ?? ($newConfig['brand']['name'] ?? 'DJ Jesse B'))),
+            'from_email' => trim((string)($input['email']['from_email'] ?? 'onboarding@resend.dev')),
+            'reply_to'   => trim((string)($input['email']['reply_to'] ?? ($newConfig['admin']['email'] ?? 'djgourmet@me.com'))),
+            'admin_copy' => !empty($input['email']['admin_copy'])
+        ];
+
+        // Re-initialize mailer in active request
+        $activeMailCfg = $newConfig['email'];
+        $activeMailCfg['admin_email'] = $newConfig['admin']['email'] ?? 'djgourmet@me.com';
+        DJ_Mailer::init($activeMailCfg);
+    }
     if (!empty($input['admin']['email'])) {
         $newEmail = strtolower(trim($input['admin']['email']));
         $users_table = DJ_Database::get_table_name('users');
@@ -420,6 +459,40 @@ if ($path === 'admin/settings' && $method === 'PUT') {
 
     json_response(['ok' => true, 'message' => 'Settings saved successfully.']);
 }
+
+if ($path === 'admin/email/test' && $method === 'POST') {
+    require_db();
+    $session = require_admin();
+
+    $targetEmail = trim((string)($input['email'] ?? ($session['user']['email'] ?? '')));
+    if (empty($targetEmail) || !filter_var($targetEmail, FILTER_VALIDATE_EMAIL)) {
+        json_error('Please specify a valid destination email address for the test.', 400);
+    }
+
+    // Support testing unsaved API key directly from form
+    $rawKey = trim((string)($input['api_key'] ?? ''));
+    if (!empty($rawKey) && strpos($rawKey, '••••') === false) {
+        $tempEmailCfg = $config['email'] ?? [];
+        $tempEmailCfg['api_key'] = $rawKey;
+        if (!empty($input['from_name'])) $tempEmailCfg['from_name'] = trim((string)$input['from_name']);
+        if (!empty($input['from_email'])) $tempEmailCfg['from_email'] = trim((string)$input['from_email']);
+        if (!empty($input['reply_to'])) $tempEmailCfg['reply_to'] = trim((string)$input['reply_to']);
+        $tempEmailCfg['enabled'] = true;
+        DJ_Mailer::init(array_merge($tempEmailCfg, ['admin_email' => $session['user']['email'] ?? '']));
+    }
+
+    $res = DJ_Mailer::testConnection($targetEmail);
+    if (!$res['ok']) {
+        json_error($res['error'] ?? 'Email delivery test failed.', 400);
+    }
+
+    json_response([
+        'ok'      => true,
+        'message' => "Test email successfully sent to {$targetEmail} via Resend!",
+        'id'      => $res['id'] ?? null
+    ]);
+}
+
 
 if ($path === 'admin/users' && $method === 'GET') {
     require_db();
@@ -507,13 +580,22 @@ if (preg_match('#^admin/users/([a-f0-9-]+)/reset-password$#', $path, $m) && $met
     $sessions_table = DJ_Database::get_table_name('sessions');
     DJ_Database::delete($sessions_table, ['user_id' => $targetId]);
 
+    // Dispatch email notification to the administrator if mailer is active
+    $emailSent = false;
+    if (DJ_Mailer::isConfigured()) {
+        $mailRes = DJ_Mailer::sendAdminPasswordReset($target['email'], $newPassword);
+        $emailSent = !empty($mailRes['ok']);
+    }
+
     json_response([
         'ok'                => true,
-        'message'           => "Password successfully reset for {$target['email']}.",
+        'message'           => "Password successfully reset for {$target['email']}." . ($emailSent ? " Notification emailed to {$target['email']}." : ""),
         'email'             => $target['email'],
-        'temporaryPassword' => $newPassword
+        'temporaryPassword' => $newPassword,
+        'emailSent'         => $emailSent
     ]);
 }
+
 
 if (preg_match('#^admin/users/([a-f0-9-]+)$#', $path, $m)) {
     require_db();
@@ -848,9 +930,21 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/access$#', $path, $m)) {
         $scope = ($input['scope'] ?? '') === 'contract' ? 'contract' : 'planner';
         $name = trim((string)($input['name'] ?? ''));
         $token = DJ_Auth::create_invitation($id, $email, $scope, $name);
+
+        $emailSent = false;
+        if (DJ_Mailer::isConfigured()) {
+            $event = DJ_Database::get_event($id);
+            $evName = $event['name'] ?? 'Your Upcoming Event';
+            $evDate = !empty($event['date']) ? date('F j, Y', strtotime($event['date'])) : 'TBD';
+            $clientDisplayName = $name ?: ($event['client']['name'] ?? 'Valued Client');
+            $mailRes = DJ_Mailer::sendClientInvitation($email, $clientDisplayName, $evName, $evDate, $token, $scope);
+            $emailSent = !empty($mailRes['ok']);
+        }
+
         json_response([
-            'token' => $token,
-            'message' => 'Invitation valid for 24 hours.'
+            'token'     => $token,
+            'message'   => $emailSent ? 'Invitation created and emailed to client via Resend!' : 'Invitation valid for 24 hours.',
+            'emailSent' => $emailSent
         ]);
     } elseif ($method === 'DELETE') {
         $email = strtolower(trim((string)($input['email'] ?? '')));
@@ -982,11 +1076,21 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
             'scope' => ($signerEmail === strtolower($event['client']['email'])) ? 'both' : 'contract'
         ];
 
+        // Automatically dispatch invitation email to signer if mailer is active
+        $emailSent = false;
+        if (DJ_Mailer::isConfigured()) {
+            $evName = $event['name'] ?? 'Your Upcoming Event';
+            $evDate = !empty($event['date']) ? date('F j, Y', strtotime($event['date'])) : 'TBD';
+            $mailRes = DJ_Mailer::sendClientInvitation($signerEmail, $signerName ?: 'Valued Client', $evName, $evDate, $token, 'contract');
+            $emailSent = !empty($mailRes['ok']);
+        }
+
         json_response([
-            'id' => $contractId,
-            'revision' => $newRev,
-            'status' => 'Issued',
-            'deliveries' => $deliveries
+            'id'         => $contractId,
+            'revision'   => $newRev,
+            'status'     => 'Issued',
+            'deliveries' => $deliveries,
+            'emailSent'  => $emailSent
         ]);
     }
 }

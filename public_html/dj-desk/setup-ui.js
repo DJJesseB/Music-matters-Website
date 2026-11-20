@@ -264,6 +264,7 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
     const db = cfg.db || {};
     const stripe = cfg.stripe || {};
     const security = cfg.security || {};
+    const email = cfg.email || {};
 
     app.innerHTML = head(
       'SYSTEM ADMINISTRATION',
@@ -275,6 +276,7 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
       <div class="tabs" role="group" aria-label="Settings categories">
         <button type="button" class="active" data-set-tab="brand">Brand & Retainer</button>
         <button type="button" data-set-tab="admin">Admin Accounts</button>
+        <button type="button" data-set-tab="email">Email (Resend)</button>
         <button type="button" data-set-tab="database">Database</button>
         <button type="button" data-set-tab="stripe">Stripe Payments</button>
         <button type="button" data-set-tab="security">Anti-Spam & Security</button>
@@ -365,6 +367,61 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
             <label>Confirm New Password
               <input type="password" name="admin_password_confirm" placeholder="Confirm new password" minlength="8">
             </label>
+          </div>
+        </fieldset>
+      </section>
+
+      <!-- Tab: Email (Resend) -->
+      <section class="card" data-settings-panel="email" hidden>
+        <fieldset>
+          <legend>Transactional Email Delivery (Resend)</legend>
+          <p>
+            Connect your <a href="https://resend.com" target="_blank" rel="noopener" style="color:var(--lime);text-decoration:underline;">Resend</a> account to automatically dispatch client portal invitations, signed agreement notices, and website inquiries with maximum inbox delivery.
+          </p>
+
+          <label class="check-row" style="display:flex;align-items:center;gap:12px;margin:20px 0;cursor:pointer;">
+            <input type="checkbox" name="email_enabled" value="1" ${email.enabled ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--lime);">
+            <strong style="font-size:15px;color:#fff;">Enable Resend Email Service</strong>
+          </label>
+
+          <div class="grid">
+            <label class="wide">Resend API Key *
+              <input type="password" name="email_api_key" placeholder="${email.has_api_key ? '•••••••• (leave blank to keep existing key)' : 're_123456789...'}" value="${esc(email.api_key || '')}">
+              <small class="input-guidance">Obtain from your dashboard at <a href="https://resend.com/api-keys" target="_blank" rel="noopener" style="color:var(--lime);">resend.com/api-keys</a> (starts with <code>re_</code>).</small>
+            </label>
+
+            <label>Sender Display Name *
+              <input type="text" name="email_from_name" value="${esc(email.from_name || brand.name || 'DJ Jesse B')}" placeholder="DJ Jesse B" required>
+            </label>
+
+            <label>Sender "From" Email *
+              <input type="email" name="email_from_email" value="${esc(email.from_email || 'onboarding@resend.dev')}" placeholder="onboarding@resend.dev" required>
+              <small class="input-guidance">Use <code>onboarding@resend.dev</code> for instant testing (delivers to your Resend account email), or your verified domain.</small>
+            </label>
+
+            <label class="wide">Reply-To Email Address
+              <input type="email" name="email_reply_to" value="${esc(email.reply_to || admin.email || 'djgourmet@me.com')}" placeholder="djgourmet@me.com">
+              <small class="input-guidance">Replies from clients or FAQ inquiries will route straight to this inbox.</small>
+            </label>
+
+            <label class="check-row wide" style="display:flex;align-items:center;gap:12px;margin-top:8px;cursor:pointer;">
+              <input type="checkbox" name="email_admin_copy" value="1" ${email.admin_copy ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--lime);">
+              <span style="font-size:14px;color:#cbd5e1;">Send a BCC copy of client invitations to the administrator email address.</span>
+            </label>
+          </div>
+
+          <div style="margin-top: 24px; padding: 20px; background: rgba(182, 255, 53, 0.03); border: 1px solid #3a4433; border-radius: 10px;">
+            <strong style="color:var(--lime); font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; display:block; margin-bottom: 6px;">Test Email Delivery</strong>
+            <p style="font-size: 13px; color: #cbd5e1; margin: 0 0 14px; line-height: 1.5;">
+              Send an instant diagnostic test to verify your API key and connection before or after saving.
+            </p>
+            <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+              <label style="flex:1; min-width:240px; margin:0;">Destination Email
+                <input type="email" id="testEmailTarget" value="${esc(admin.email || 'djgourmet@me.com')}" placeholder="you@example.com">
+              </label>
+              <button type="button" id="btnTestEmail" class="button secondary" style="padding:11px 20px;">Send Test Email</button>
+            </div>
+            <div id="testEmailResult" class="test-result" hidden style="margin-top: 14px;"></div>
           </div>
         </fieldset>
       </section>
@@ -663,6 +720,45 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
       }
     };
 
+    // Test Email Delivery button
+    const testEmailBtn = document.querySelector('#btnTestEmail');
+    const testEmailRes = document.querySelector('#testEmailResult');
+    if (testEmailBtn) {
+      testEmailBtn.onclick = async () => {
+        const targetInput = document.querySelector('#testEmailTarget');
+        const target = targetInput ? targetInput.value.trim() : '';
+        if (!target || !target.includes('@')) {
+          message('Please enter a valid destination email address for the test.', true);
+          if (targetInput) targetInput.focus();
+          return;
+        }
+
+        testEmailRes.hidden = false;
+        testEmailRes.className = 'test-result testing';
+        testEmailRes.textContent = 'Sending test email via Resend...';
+        testEmailBtn.disabled = true;
+
+        try {
+          const res = await api('admin/email/test', 'POST', {
+            email: target,
+            api_key: form.elements.email_api_key.value,
+            from_name: form.elements.email_from_name.value,
+            from_email: form.elements.email_from_email.value,
+            reply_to: form.elements.email_reply_to.value
+          });
+          testEmailRes.className = 'test-result success';
+          testEmailRes.textContent = '✓ ' + (res.message || 'Test email dispatched successfully! Check your inbox.');
+          message(res.message || 'Test email dispatched.');
+        } catch (err) {
+          testEmailRes.className = 'test-result error';
+          testEmailRes.textContent = '✕ ' + err.message;
+          message(err.message, true);
+        } finally {
+          testEmailBtn.disabled = false;
+        }
+      };
+    }
+
     // Demo data controls
     const demoNotice = document.querySelector('#demoNotice');
     document.querySelector('#btnRestoreDemo').onclick = async () => {
@@ -718,6 +814,14 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
           email: form.elements.admin_email.value,
           password: p1 || undefined
         },
+        email: {
+          enabled: form.elements.email_enabled.checked,
+          api_key: form.elements.email_api_key.value,
+          from_name: form.elements.email_from_name.value,
+          from_email: form.elements.email_from_email.value,
+          reply_to: form.elements.email_reply_to.value,
+          admin_copy: form.elements.email_admin_copy.checked
+        },
         stripe: {
           enabled: form.elements.stripe_enabled.checked,
           mode: form.elements.stripe_mode.value,
@@ -731,6 +835,7 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
           session_lifetime: Number(form.elements.session_days.value || 7) * 86400
         }
       };
+
 
       const statusEl = document.querySelector('#settingsSaveStatus');
       statusEl.textContent = 'Saving settings...';

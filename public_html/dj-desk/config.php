@@ -43,4 +43,15 @@ return array (
     'secret_key' => '',
     'webhook_secret' => '',
   ),
+  'email' => 
+  array (
+    'enabled' => false,
+    'provider' => 'resend',
+    'api_key' => '',
+    'from_name' => 'DJ Jesse B',
+    'from_email' => 'onboarding@resend.dev',
+    'reply_to' => 'djgourmet@me.com',
+    'admin_copy' => false,
+  ),
 );
+

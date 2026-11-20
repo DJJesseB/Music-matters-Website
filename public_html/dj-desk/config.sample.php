@@ -53,5 +53,17 @@ return [
         'publishable_key' => '',
         'secret_key'      => '',
         'webhook_secret'  => ''
+    ],
+
+    // Email Delivery via Resend (https://resend.com)
+    'email' => [
+        'enabled'         => false,
+        'provider'        => 'resend',
+        'api_key'         => '',          // Your Resend API key (starts with re_)
+        'from_name'       => 'DJ Jesse B',
+        'from_email'      => 'onboarding@resend.dev', // Use onboarding@resend.dev or your verified domain
+        'reply_to'        => 'djgourmet@me.com',      // Where replies should go
+        'admin_copy'      => false        // BCC admin on client notifications
     ]
 ];
+
