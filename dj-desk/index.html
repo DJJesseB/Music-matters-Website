@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>DJ Live Request Desk &amp; Event Manager</title>
+    <link rel="stylesheet" href="./style.css?v=200">
+    <script>
+        const scriptDir = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+        window.djDeskConfig = window.djDeskConfig || {};
+        if (!window.djDeskConfig.apiBase) {
+            window.djDeskConfig.apiBase = (scriptDir ? scriptDir : './') + 'api/';
+        }
+    </script>
+    <script type="module" src="./app.js?v=200"></script>
+</head>
+<body>
+    <aside>
+        <a class="brand" href="#dashboard">DJ EVENT DESK<span>EVENT MANAGER</span></a>
+        <div class="nav-label">YOUR WORKSPACE</div>
+        <nav>
+            <a href="#dashboard">◈ &nbsp; Dashboard</a>
+            <a href="#events">▦ &nbsp; Events</a>
+            <a href="#new">＋ &nbsp; New booking</a>
+            <a href="#requests">◇ &nbsp; Date requests</a>
+            <a href="#music-admin">♫ &nbsp; Song requests</a>
+        </nav>
+        <div class="local">
+            <i></i> DJ BOOTH &amp; CLIENT HUB
+            <small>Connected &amp; Synced</small>
+            <div class="desk-byline" style="font-size: 11px; color: #94a3b8; margin-top: 6px; letter-spacing: 0.02em;">DJ Jesse B - Standalone Web Edition</div>
+        </div>
+    </aside>
+    <main>
+        <header>
+            <span>BUSINESS COMMAND CENTER</span>
+            <span class="pill">Live Desk</span>
+        </header>
+        <div id="notice" role="status"></div>
+        <div id="app"></div>
+    </main>
+</body>
+</html>

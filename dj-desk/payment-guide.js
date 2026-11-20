@@ -1,0 +1,8 @@
+export const paymentText=`Payment options:
+Stripe: Sign in to your event account and open Payment options & instructions for your event-specific secure Stripe invoice link. Pay only the agreed amount shown on your invoice.
+Check or money order: contact Jesse for payee and delivery instructions when you are ready to pay. Include your name and event date.
+Cash: contact Jesse to arrange an in-person payment. Please do not mail cash.
+Verified Stripe payments update the event balance. Jesse records verified cash, checks, and money orders separately.`;
+export function paymentGuide(event,esc,money){const retainer=Math.max(0,(event.depositRequired??250)-(event.depositReceived||0)),balance=Math.max(0,(event.amount||0)-(event.paid||0));return `<section class="payment-guide"><span class="badge purple">PAYMENT OPTIONS</span><h3>A few ways to make it official</h3><p>Retainer remaining: <strong>${money(retainer)}</strong> · Total balance remaining (includes retainer): <strong>${money(balance)}</strong></p><h4>Pay online with Stripe</h4><p>Your secure event invoice appears below when issued. Enter payment details only on Stripe’s payment page.</p><h4>Check or money order</h4><p>Contact Jesse for payee and delivery instructions when you are ready to pay. These details will be shared privately as needed.</p><p>Include your name and event date so Jesse can match your payment.</p><h4>Cash—in person</h4><p>Contact Jesse to arrange an in-person payment. <strong>Please do not mail cash.</strong></p><small>Online payments update your balance after confirmation. Jesse records cash, checks, and money orders after receipt. Opening a payment link alone does not change your balance.</small></section>`;}
+
+export const stripePaymentText=paymentText;
