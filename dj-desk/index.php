@@ -71,7 +71,10 @@ if (!empty($config['configured'])) {
     <main>
         <header>
             <span>BUSINESS COMMAND CENTER</span>
-            <span class="pill">Live Desk</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <a href="../" class="button secondary" style="padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:normal;text-decoration:none;">← Home</a>
+                <span class="pill">Live Desk</span>
+            </div>
         </header>
         <div id="notice" role="status">
             <?php if (!$dbConfigured): ?>
