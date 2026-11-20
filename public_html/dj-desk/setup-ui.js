@@ -320,6 +320,7 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
           
           <div style="margin-top: 14px;">
             <strong style="display:block; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--lime); margin-bottom: 10px;">Active Administrators</strong>
+            <div id="adminResetResult" hidden></div>
             <div id="adminUsersList" style="margin-bottom: 24px;"></div>
           </div>
 
@@ -340,6 +341,13 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
               </div>
             </div>
             <div id="newAdminNotice" class="test-result" hidden style="margin-top: 12px;"></div>
+          </div>
+
+          <div style="margin-top: 20px; padding: 14px 16px; background: rgba(255,255,255,0.02); border: 1px dashed #48513f; border-radius: 8px;">
+            <strong style="color: var(--lime); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; display:block; margin-bottom: 4px;">Single-Admin Emergency Recovery</strong>
+            <small style="color: #cbd5e1; line-height: 1.5; display:block;">
+              If you only have 1 administrator account and are locked out, emergency recovery is built in: open <code>config.php</code> on your host (via cPanel File Manager or FTP) and set <code>'emergency_password' => 'YourNewPass123!'</code> under <code>'admin'</code>, or run <code>php api/emergency-reset.php email new_password</code> via SSH.
+            </small>
           </div>
         </fieldset>
 
@@ -500,7 +508,7 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
                   </div>
                 </div>
                 <div style="display:flex;gap:8px;">
-                  <button type="button" class="button secondary btn-reset-admin-pass" data-user-id="${esc(u.id)}" data-user-email="${esc(u.email)}" style="padding:6px 12px;font-size:12px;">Change Password</button>
+                  ${isMe ? '' : `<button type="button" class="button secondary btn-reset-admin-pass" data-user-id="${esc(u.id)}" data-user-email="${esc(u.email)}" style="padding:6px 12px;font-size:12px;">🔑 Reset Password</button>`}
                   ${isMe || users.length <= 1 ? '' : `<button type="button" class="button secondary btn-delete-admin" data-user-id="${esc(u.id)}" data-user-email="${esc(u.email)}" style="padding:6px 12px;font-size:12px;color:#ff6b6b;border-color:#ff6b6b;">Delete</button>`}
                 </div>
               </div>
@@ -513,15 +521,44 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
         btn.onclick = async () => {
           const email = btn.dataset.userEmail;
           const uid = btn.dataset.userId;
-          const newPass = prompt(`Enter new password for ${email} (minimum 8 characters):`);
-          if (newPass === null) return;
-          if (newPass.length < 8) {
-            alert('Password must be at least 8 characters long.');
-            return;
+          const choice = confirm(`Reset password for administrator "${email}"?\n\n• Click OK to automatically generate a secure temporary password.\n• Click Cancel to enter a custom password.`);
+          let payload = {};
+          if (!choice) {
+            const custom = prompt(`Enter custom temporary password for ${email} (minimum 8 characters):`);
+            if (!custom) return;
+            if (custom.length < 8) {
+              alert('Password must be at least 8 characters long.');
+              return;
+            }
+            payload.password = custom;
           }
+
           try {
-            const res = await api(`admin/users/${uid}`, 'PUT', { password: newPass });
-            message(res.message || 'Password updated successfully.');
+            const res = await api(`admin/users/${uid}/reset-password`, 'POST', payload);
+            message(res.message || 'Password reset successfully.');
+            const resetBox = document.querySelector('#adminResetResult');
+            if (resetBox) {
+              resetBox.hidden = false;
+              resetBox.innerHTML = `
+                <div style="background:rgba(182,255,53,0.08);border:1px solid #64734e;border-radius:8px;padding:16px;margin-bottom:18px;">
+                  <strong style="color:var(--lime);display:block;margin-bottom:6px;">✓ Password Reset for ${esc(res.email)}</strong>
+                  <p style="margin:0 0 10px;font-size:13px;color:#e2e8f0;">Temporary password assigned. All existing sessions for this administrator have been logged out:</p>
+                  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                    <input type="text" id="tempPassField" value="${esc(res.temporaryPassword)}" readonly style="font-family:monospace;font-size:15px;font-weight:700;padding:8px 12px;background:#182017;color:#b6ff35;border:1px solid #48513f;border-radius:6px;width:260px;">
+                    <button type="button" class="button secondary" id="btnCopyPass" style="padding:8px 14px;font-size:13px;">Copy Password</button>
+                  </div>
+                  <small style="display:block;margin-top:8px;color:var(--muted);">Provide this temporary password to the administrator to sign in.</small>
+                </div>
+              `;
+              const copyBtn = document.querySelector('#btnCopyPass');
+              if (copyBtn) {
+                copyBtn.onclick = () => {
+                  navigator.clipboard?.writeText(res.temporaryPassword);
+                  copyBtn.textContent = 'Copied!';
+                  setTimeout(() => { if (copyBtn) copyBtn.textContent = 'Copy Password'; }, 2000);
+                };
+              }
+            }
           } catch (err) {
             message(err.message, true);
           }

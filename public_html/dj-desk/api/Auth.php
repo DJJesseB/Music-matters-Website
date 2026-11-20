@@ -65,26 +65,28 @@ class DJ_Auth {
         $email = strtolower(trim($email));
         $user = DJ_Database::get_row("SELECT * FROM $users_table WHERE email = ?", [$email]);
 
-        if (!$user) {
-            // Check if matches configured admin credentials on initial setup
-            $configFile = dirname(__DIR__) . '/config.php';
-            $config = file_exists($configFile) ? require $configFile : [];
-            $adminEmail = strtolower(trim($config['admin']['email'] ?? 'admin@example.com'));
-            $adminPass = $config['admin']['password'] ?? 'DJDesk2026!';
-            if ($email === $adminEmail && $password === $adminPass) {
+        // Emergency Single-Admin Reset: Check config.php for emergency override credentials
+        $configFile = dirname(__DIR__) . '/config.php';
+        clearstatcache(true, $configFile);
+        $config = file_exists($configFile) ? require $configFile : [];
+        $adminEmail = strtolower(trim($config['admin']['email'] ?? 'admin@example.com'));
+        $emergencyPass = $config['admin']['emergency_password'] ?? ($config['admin']['password'] ?? null);
+
+        if (!empty($emergencyPass) && $email === $adminEmail && $password === $emergencyPass) {
+            $hashed = self::hash_password($emergencyPass);
+            if ($user) {
+                DJ_Database::update($users_table, ['password' => $hashed], ['id' => $user['id']]);
+                $user['password'] = $hashed;
+            } else {
                 $user = [
-                    'id' => DJ_Database::uuid(),
-                    'email' => $adminEmail,
-                    'password' => self::hash_password($adminPass),
-                    'role' => 'admin'
+                    'id'       => DJ_Database::uuid(),
+                    'email'    => $adminEmail,
+                    'password' => $hashed,
+                    'role'     => 'admin'
                 ];
                 DJ_Database::insert($users_table, $user);
-            } else {
-                throw new Exception('Invalid email or password', 401);
             }
-        }
-
-        if (!self::verify_password($password, $user['password'])) {
+        } elseif (!$user || !self::verify_password($password, $user['password'])) {
             throw new Exception('Invalid email or password', 401);
         }
 

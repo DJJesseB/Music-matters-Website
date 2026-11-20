@@ -471,6 +471,50 @@ if ($path === 'admin/users' && $method === 'POST') {
     ]);
 }
 
+if (preg_match('#^admin/users/([a-f0-9-]+)/reset-password$#', $path, $m) && $method === 'POST') {
+    require_db();
+    $session = require_admin();
+    $targetId = $m[1];
+
+    // Must only be triggered by ANOTHER admin
+    if ($targetId === $session['user']['id']) {
+        json_error('Password reset for this account must be triggered by another administrator. To change your own password, use the Change Your Password form.', 403);
+    }
+
+    $users_table = DJ_Database::get_table_name('users');
+    $target = DJ_Database::get_row("SELECT * FROM $users_table WHERE id = ? AND role = 'admin'", [$targetId]);
+    if (!$target) {
+        json_error('Administrator user not found.', 404);
+    }
+
+    $newPassword = trim($input['password'] ?? '');
+    if (empty($newPassword)) {
+        // Automatically generate a secure 12-character temporary password
+        $chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*';
+        $newPassword = '';
+        $max = strlen($chars) - 1;
+        for ($i = 0; $i < 12; $i++) {
+            $newPassword .= $chars[random_int(0, $max)];
+        }
+    } elseif (strlen($newPassword) < 8) {
+        json_error('Temporary password must be at least 8 characters long.', 400, 'password');
+    }
+
+    $hashed = DJ_Auth::hash_password($newPassword);
+    DJ_Database::update($users_table, ['password' => $hashed], ['id' => $targetId]);
+
+    // Sign the target user out of all active sessions
+    $sessions_table = DJ_Database::get_table_name('sessions');
+    DJ_Database::delete($sessions_table, ['user_id' => $targetId]);
+
+    json_response([
+        'ok'                => true,
+        'message'           => "Password successfully reset for {$target['email']}.",
+        'email'             => $target['email'],
+        'temporaryPassword' => $newPassword
+    ]);
+}
+
 if (preg_match('#^admin/users/([a-f0-9-]+)$#', $path, $m)) {
     require_db();
     $session = require_admin();
