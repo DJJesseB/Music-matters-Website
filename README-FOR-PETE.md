@@ -4,9 +4,9 @@ Prepared November 18, 2026 from the current locally reviewed website preview. Th
 
 ## Start here
 
-Upload the CONTENTS of this folder to the new host's document root, so index.html sits directly in that root. Keep filenames, capitalization and folders intact. No build, npm installation, PHP or database is required to display the website.
+Upload the CONTENTS of the `public_html/` folder to the new host's document root, so index.html sits directly in that root. Keep filenames, capitalization and folders intact. No build, npm installation, PHP or database is required to display the website.
 
-For local review, serve this folder with any static web server. For example, if Python is installed: python -m http.server 8080 --bind 127.0.0.1. Then open http://127.0.0.1:8080/. Do not rely on double-clicking index.html: browsers may block the JavaScript modules when opened as local files.
+For local review, serve the `public_html/` folder with any static web server. For example, if Python is installed: cd public_html && python -m http.server 8080 --bind 127.0.0.1. Then open http://127.0.0.1:8080/. Do not rely on double-clicking index.html: browsers may block the JavaScript modules when opened as local files.
 
 ## Included
 
