@@ -102,9 +102,9 @@ jobs:
           trap 'rm -f "$deploy_script"' EXIT
           # Credentials live only in the temporary runner's restricted script.
           printf 'set ftp:ssl-force true\nset ftp:ssl-protect-data true\nset ssl:verify-certificate true\nset net:max-retries 2\nset net:timeout 15\n' > "$deploy_script"
-          # Shared-host FTPS presents the provider certificate for the Staging alias.
-          # Keep CA chain verification on; only exempt the Staging hostname check.
-          if [[ "${GITHUB_REF_NAME}" == "Staging" ]]; then
+          # Shared-host FTPS presents the SiteGround provider certificate for both site aliases.
+          # Keep CA chain verification on; exempt the alias hostname check only.
+          if [[ "${GITHUB_REF_NAME}" == "Staging" || "${GITHUB_REF_NAME}" == "Production" ]]; then
             printf 'set ssl:check-hostname false\n' >> "$deploy_script"
           fi
           printf 'open -u "%s","%s" "ftp://%s"\n' "$FTP_USER" "$FTP_PASSWORD" "$FTP_HOST" >> "$deploy_script"
