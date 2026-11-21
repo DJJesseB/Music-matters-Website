@@ -7,6 +7,9 @@
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
+// Never reuse an authenticated JSON response after a session changes.
+header('Cache-Control: no-store, no-cache, must-revalidate, private');
+header('Pragma: no-cache');
 
 // Global exception handler ensuring all errors produce valid JSON
 set_exception_handler(function (\Throwable $e) {
@@ -1751,7 +1754,14 @@ if (preg_match('#^admin/requests/([a-f0-9-]+)/(approve|decline|response)$#', $pa
             ],
             'amount' => (float)($b['quote']['total'] ?? 1800),
             'subtotal' => (float)($b['quote']['total'] ?? 1800),
-            'depositRequired' => 250,
+            'depositRequired' => (function () use ($b, $config) {
+                $total = max(0, (float)($b['quote']['total'] ?? 1800));
+                $brand = $config['brand'] ?? [];
+                $flat = max(0, (float)($brand['standard_deposit'] ?? 250));
+                $percent = round($total * max(0, (float)($brand['deposit_percent'] ?? 20)) / 100, 2);
+                $mode = $brand['deposit_mode'] ?? 'higher';
+                return $mode === 'percent' ? $percent : ($mode === 'flat' ? $flat : max($flat, $percent));
+            })(),
             'notes' => 'Website intake booking: ' . ($b['notes'] ?? '')
         ];
         $saved = DJ_Database::save_event($eventInput);

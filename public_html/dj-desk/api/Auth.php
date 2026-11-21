@@ -131,8 +131,12 @@ class DJ_Auth {
         $cookiePath = rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/\\') ?: '/';
         setcookie('dj_desk_session', '', [
             'expires' => time() - 3600,
-            'path' => $cookiePath
+            'path' => $cookiePath,
+            'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') == 443),
+            'httponly' => true,
+            'samesite' => 'Lax'
         ]);
+        unset($_COOKIE['dj_desk_session']);
     }
 
     public static function create_invitation(string $eventId, string $email, string $scope = 'planner', string $name = ''): string {

@@ -1,5 +1,16 @@
-const chooser=document.querySelector('dialog[aria-labelledby="choose-title"]'),login=document.querySelector('#client-access');
-document.querySelectorAll('[data-request]').forEach(button=>button.onclick=()=>chooser.showModal());chooser.querySelector('.close').onclick=()=>chooser.close();
-document.querySelectorAll('[data-event]').forEach(link=>link.onclick=()=>{document.querySelector('[name=eventType]').value=link.dataset.event;if(chooser.open)chooser.close();});
-if(login){login.querySelector('[data-close-login]')?.addEventListener('click',()=>login.close());login.querySelector('[data-contact-login]')?.addEventListener('click',()=>login.close());}
-for(const dialog of [chooser,login])dialog.addEventListener('click',event=>{if(event.target!==dialog)return;const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();});
+// Availability requests and all event planning now begin in DJ-Desk.
+document.querySelectorAll('[data-request]').forEach(button => button.addEventListener('click', () => {
+  window.location.href = '/dj-desk/#inquire';
+}));
+
+const backToTop = document.querySelector('#back-to-top');
+if (backToTop) {
+  const update = () => {
+    const distance = document.documentElement.scrollHeight - window.innerHeight;
+    backToTop.hidden = distance <= 0 || window.scrollY < distance * 0.3;
+  };
+  backToTop.addEventListener('click', () => window.scrollTo({top: 0, behavior: 'smooth'}));
+  window.addEventListener('scroll', update, {passive: true});
+  window.addEventListener('resize', update);
+  update();
+}
