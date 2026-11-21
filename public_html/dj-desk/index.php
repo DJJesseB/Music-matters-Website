@@ -85,6 +85,7 @@ if (!$isResetRequested && !empty($config['configured'])) {
         <header>
             <span>BUSINESS COMMAND CENTER</span>
             <div style="display:flex;align-items:center;gap:12px;">
+                <a class="header-song-requests" href="#music-admin">♫ Song Requests</a>
                 <span class="pill">Live Desk</span>
             </div>
         </header>
