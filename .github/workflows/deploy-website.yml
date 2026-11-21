@@ -105,7 +105,7 @@ jobs:
           # Shared-host FTPS presents the provider certificate for the Staging alias.
           # Keep CA chain verification on; only exempt the Staging hostname check.
           if [[ "${GITHUB_REF_NAME}" == "Staging" ]]; then
-            printf 'set ssl:check-hostname false\\n' >> "$deploy_script"
+            printf 'set ssl:check-hostname false\n' >> "$deploy_script"
           fi
           printf 'open -u "%s","%s" "ftp://%s"\n' "$FTP_USER" "$FTP_PASSWORD" "$FTP_HOST" >> "$deploy_script"
           printf 'mirror --reverse --verbose --parallel=2 --no-perms "%s" "%s"\n' "${RUNNER_TEMP}/site-deploy/" "$FTP_REMOTE_DIR" >> "$deploy_script"
