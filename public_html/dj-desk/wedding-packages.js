@@ -34,18 +34,18 @@ export function quoteWeddingPackage(input,{admin=false}={}){
  const lighting=selection.lighting==='none'?[]:selection.lighting==='advancedUplighting'?['advanced','uplighting']:typeof selection.lighting==='string'?selection.lighting.split('+'):['invalid'];
  if(new Set(lighting).size!==lighting.length||lighting.some(k=>!['uplighting','advanced','leafSpinner','premium'].includes(k)))fail('Choose valid lighting upgrades');
  const chargedLighting=lighting;
- if(!admin&&lighting.includes('advanced'))fail(base.id==='essentials'?'Essential’s offers wireless uplighting only.':'Advanced lighting is already included in this wedding package.');
- if(!admin&&base.id==='essentials'&&lighting.some(k=>k!=='uplighting'))fail('This lighting upgrade is not available with Essential’s. Wireless uplighting is available.');
+ if(!admin&&lighting.includes('advanced'))fail('Advanced lighting is already included in the applicable wedding packages.');
+ if(!admin&&base.id==='essentials'&&lighting.length)fail('Essential’s Package includes Basic Lighting and has no optional lighting upgrades.');
  for(const key of ['bubbles','haze'])if(typeof selection[key]!=='boolean')fail('Invalid effect selection');
  for(const key of ['bubblesApproval','hazeApproval'])if(!['Pending','Approved','Declined'].includes(selection[key]))fail('Choose a venue approval status');
  for(const key of ['bubbles','haze'])if(selection[key]&&selection[key+'Approval']==='Declined')fail('Remove the '+weddingAddons[key].name+' because venue approval was declined');
  const charge=selection.additionalCharge??0;if(typeof charge!=='number'||!Number.isFinite(charge)||charge<0||charge>100000||Math.abs(charge*100-Math.round(charge*100))>0.00001)fail('Additional quoted charges must be a valid positive dollar amount or zero');
  const chargeNote=typeof selection.chargeNote==='string'?selection.chargeNote.trim():'';if(chargeNote.length>1000||charge>0&&!chargeNote)fail('Describe the additional quoted charge');
  const extraTopPairs=selection.extraTopPairs??0;if(!Number.isInteger(extraTopPairs)||extraTopPairs<0||extraTopPairs>20)fail('Choose 0–20 additional speaker pairs');
- if(!admin&&base.id==='essentials'&&(selection.foamSticks||selection.bubbles||selection.haze||additionalSound||extraSubwoofers))fail('Essential’s Package offers only wireless uplighting and extra time as add-ons.');
+ if(!admin&&base.id==='essentials'&&(selection.foamSticks||selection.bubbles||selection.haze||additionalSound||extraSubwoofers))fail('Essential’s Package offers extra time as its only add-on.');
  if(selection.glow&&!admin)fail('This upgrade is arranged by DJ Jesse B.');
  const foamSticks=selection.foamSticks??0;
- const clean={...(selection.glow?{glow:true}:{}),...(foamSticks?{foamSticks}:{}),id:base.id,guestCount,additionalSound,extraSubwoofers,booth:base.id==='essentials'?'TBD':selection.booth,extraHalfHours:selection.extraHalfHours,lighting:selection.lighting,bubbles:selection.bubbles,haze:selection.haze,bubblesApproval:selection.bubblesApproval,hazeApproval:selection.hazeApproval,additionalCharge:charge,chargeNote,extraTopPairs};
+ const clean={...(selection.glow?{glow:true}:{}),...(foamSticks?{foamSticks}:{}),id:base.id,guestCount,additionalSound,extraSubwoofers,booth:selection.booth,extraHalfHours:selection.extraHalfHours,lighting:selection.lighting,bubbles:selection.bubbles,haze:selection.haze,bubblesApproval:selection.bubblesApproval,hazeApproval:selection.hazeApproval,additionalCharge:charge,chargeNote,extraTopPairs};
  const adminCoverage=selection.adminCoverage;
  if(!Number.isFinite(base.price)||base.price<0||base.price>100000)fail('Enter a valid custom base price');
  if(adminCoverage){for(const k of ['ceremony','cocktail','outdoor','tent'])if(typeof adminCoverage[k]!=='boolean')fail('Invalid coverage option');for(const k of ['ceremonyPrice','cocktailPrice','tentPrice']){const v=adminCoverage[k];if(!Number.isFinite(v)||v<0||v>100000||Math.abs(v*100-Math.round(v*100))>0.00001)fail('Coverage prices must be valid dollar amounts');}if(!['same','different'].includes(adminCoverage.space))fail('Choose the cocktail-hour space');if(adminCoverage.tent&&(!adminCoverage.cocktail||!adminCoverage.outdoor))fail('A pop-up tent requires outdoor cocktail coverage');clean.adminCoverage={...adminCoverage};if(base.id==='custom'){clean.customBasePrice=base.price;clean.customBaseName=base.name;}}
