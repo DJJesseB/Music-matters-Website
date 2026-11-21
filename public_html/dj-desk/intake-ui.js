@@ -5,10 +5,10 @@ import {newId} from './request-id.js?v=180';
 import {openDeclineDraft,responseDraftCard} from './decline-ui.js?v=180';
 import {arrangeAddons} from './addon-layout.js?v=180';
 import {chooseEvent,eventChoices} from './event-picker.js?v=180';
-import {privateIntake} from './private-intake.js?v=210';
-import {schoolIntake} from './school-intake.js?v=205';
+import {privateIntake} from './private-intake.js?v=211';
+import {schoolIntake} from './school-intake.js?v=211';
 import {weddingPackages,weddingAddons,quoteWeddingPackage,ceremonyCondition,soundCapacityNotice} from './wedding-packages.js?v=180';
-import {packageDetails,packageFeatures,syncWeddingLighting,syncWeddingAddons} from './package-ui.js?v=205';
+import {packageDetails,packageFeatures,syncWeddingLighting,syncWeddingAddons} from './package-ui.js?v=211';
 import {calculateDeposit} from './pricing.js?v=180';
 export function bookingUI({api,app,head,esc,field,area,money,message}){
  async function intake(selected=''){
