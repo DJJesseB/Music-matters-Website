@@ -81,7 +81,7 @@ jobs:
           test ! -e "$destination/dj-desk/data"
           test ! -e "$destination/dj-desk/api/php_errorlog"
           test ! -e "$destination/dj-desk/api/emergency-reset.php"
-          if find "$destination" -type f \\( -name '.htaccess' -o -name '.env' -o -name '*.sqlite*' -o -name '*.db' -o -name '*.log' -o -name 'php_errorlog' \\) | grep -q .; then
+          if find "$destination" -type f \( -name '.htaccess' -o -name '.env' -o -name '*.sqlite*' -o -name '*.db' -o -name '*.log' -o -name 'php_errorlog' \) | grep -q .; then
             echo "::error::Protected file found in upload package"
             exit 1
           fi
@@ -103,7 +103,7 @@ jobs:
           # Credentials live only in the temporary runner's restricted script.
           printf 'set ftp:ssl-force true\nset ftp:ssl-protect-data true\nset ssl:verify-certificate true\nset net:max-retries 2\nset net:timeout 15\n' > "$deploy_script"
           printf 'open -u "%s","%s" "ftp://%s"\n' "$FTP_USER" "$FTP_PASSWORD" "$FTP_HOST" >> "$deploy_script"
-          printf 'mirror --reverse --verbose --parallel=2 --no-perms "%s" "%s"\\n' "${RUNNER_TEMP}/site-deploy/" "$FTP_REMOTE_DIR" >> "$deploy_script"
+          printf 'mirror --reverse --verbose --parallel=2 --no-perms "%s" "%s"\n' "${RUNNER_TEMP}/site-deploy/" "$FTP_REMOTE_DIR" >> "$deploy_script"
           printf 'bye\n' >> "$deploy_script"
           lftp -f "$deploy_script"
           echo "FTPS upload completed for ${GITHUB_REF_NAME} at ${GITHUB_SHA}"
