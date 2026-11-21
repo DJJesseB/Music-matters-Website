@@ -13,8 +13,8 @@ export const weddingAddons={
  additionalSound:{name:'Additional sound system package',price:1000,description:'2 × 15-inch PA speakers and 1 × 18-inch subwoofer'},
  subwoofer:{name:'Additional 18-inch subwoofer',price:250,description:'Per extra subwoofer, beyond any subwoofer included with the additional sound system'},
  additionalDancing:{name:'Additional dancing',price:200,description:'Per half-hour'},
- advancedUplighting:{name:'Advanced lighting + wireless uplighting',price:500,description:'Advanced dance-floor lighting plus 8 wireless uplights'},
- advanced:{name:'Advanced dance-floor lighting',price:250,description:'Four light tubes plus two Derby effect lights on a single T-bar stand; replaces included Basic lighting'},
+ advancedUplighting:{name:'Advanced lighting + wireless uplighting',price:750,description:'Advanced wedding lighting (four light tubes and two RockOn-7 moving heads) plus 8 wireless uplights'},
+ advanced:{name:'Advanced Lighting Package',price:500,description:'Four light tubes plus two RockOn-7 moving-head lights on a T-bar stand; replaces included Basic lighting when purchased separately'},
  uplighting:{name:'Wireless uplighting',price:250,description:'8 wireless uplights'},
  premium:{name:'Premium Lighting Package',price:750,description:'4 tube lights, 2 moving heads, 4 color wash lights, custom lighting design, and custom light-show programming'},
  bubbles:{name:'Smoke-filled bubble machine',price:250,description:'Subject to venue approval'},
@@ -33,7 +33,8 @@ export function quoteWeddingPackage(input,{admin=false}={}){
  if(!Number.isInteger(selection.extraHalfHours)||selection.extraHalfHours<0||selection.extraHalfHours>4)fail('Additional dancing is limited to 2 extra hours (4 half-hour blocks)');
  const lighting=selection.lighting==='none'?[]:selection.lighting==='advancedUplighting'?['advanced','uplighting']:typeof selection.lighting==='string'?selection.lighting.split('+'):['invalid'];
  if(new Set(lighting).size!==lighting.length||lighting.some(k=>!['uplighting','advanced','leafSpinner','premium'].includes(k)))fail('Choose valid lighting upgrades');
- const chargedLighting=lighting;
+ const includedAdvanced=['full','gold','basic'].includes(base.id);
+ const chargedLighting=lighting.filter(key=>!(key==='advanced'&&includedAdvanced));
  if(!admin&&lighting.includes('advanced'))fail('Advanced lighting is already included in the applicable wedding packages.');
  if(!admin&&base.id==='essentials'&&lighting.length)fail('Essential’s Package includes Basic Lighting and has no optional lighting upgrades.');
  for(const key of ['bubbles','haze'])if(typeof selection[key]!=='boolean')fail('Invalid effect selection');
