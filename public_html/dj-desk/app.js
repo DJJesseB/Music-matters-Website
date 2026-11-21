@@ -1,12 +1,12 @@
 import {mountStripePayments} from './stripe-ui.js?v=181';
 import {mountFollowups} from './followup-ui.js?v=180';
 import {paymentGuide} from './payment-guide.js?v=184';
-import './lighting-addon.js?v=207';
+import './lighting-addon.js?v=211';
 import './addon-photo-preview.js?v=205';
 import {musicUI} from './music-ui.js?v=180';
-import {bookingUI} from './intake-ui.js?v=210';
+import {bookingUI} from './intake-ui.js?v=211';
 import {standardDeposit,depositPolicy,calculateDeposit} from './pricing.js?v=180';
-import {mountPackageEditor} from './package-ui.js?v=210';
+import {mountPackageEditor} from './package-ui.js?v=211';
 import {formMessage,installFormValidation} from './form-feedback.js?v=180';
 import {timeField,bindTimeFields} from './time-input.js?v=180';
 import {portalUI} from './portal-ui.js?v=184';
