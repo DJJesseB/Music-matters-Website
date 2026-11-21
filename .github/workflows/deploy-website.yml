@@ -116,3 +116,5 @@ jobs:
 # Controlled Staging deployment verification — 2026-11-21
 
 # Production deployment activation — guarded initial upload, 2026-11-20
+
+# Production deployment retry — verified guard remains active
