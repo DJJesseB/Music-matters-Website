@@ -107,3 +107,5 @@ jobs:
           printf 'bye\n' >> "$deploy_script"
           lftp -f "$deploy_script"
           echo "FTPS upload completed for ${GITHUB_REF_NAME} at ${GITHUB_SHA}"
+
+# Controlled Staging deployment verification — 2026-11-21
