@@ -7,7 +7,11 @@ function openPreview(source){
  dialog.className='addon-photo-dialog';
  dialog.setAttribute('aria-label','Add-on photo preview');
  const close=document.createElement('button');close.type='button';close.className='addon-photo-close';close.textContent='Close ×';
- const photo=document.createElement('img');photo.src=source.currentSrc||source.src;photo.alt=source.alt;
+ const photo=document.createElement('img');
+ const originalUrl=new URL(source.currentSrc||source.src,window.location.href);
+ if(originalUrl.pathname.endsWith('.webp'))originalUrl.pathname=originalUrl.pathname.replace(/\.webp$/,'-large.webp');
+ photo.src=originalUrl.href;
+ photo.alt=source.alt;
  dialog.append(close,photo);document.body.append(dialog);active=dialog;
  const previousOverflow=document.body.style.overflow;document.body.style.overflow='hidden';
  close.onclick=()=>dialog.close();
