@@ -1,0 +1,5 @@
+.back-to-top{position:fixed;right:24px;bottom:24px;z-index:10000;border:1px solid #b6ff35;border-radius:999px;background:#171c17;color:#b6ff35;padding:13px 18px;font:700 15px system-ui,sans-serif;box-shadow:0 8px 30px #0008;cursor:pointer;line-height:1.2}
+.back-to-top:hover,.back-to-top:focus-visible{background:#b6ff35;color:#141814}
+.back-to-top:focus-visible{outline:3px solid #914dff;outline-offset:3px}
+.back-to-top[hidden]{display:none!important}
+@media(max-width:650px){.back-to-top{right:14px;bottom:14px;padding:12px 15px}}

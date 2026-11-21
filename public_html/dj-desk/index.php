@@ -60,7 +60,7 @@ if (!$isResetRequested && !empty($config['configured'])) {
         };
     </script>
     <script type="module" src="./app.js?v=204"></script>
-</head>
+<link rel="stylesheet" href="/back-to-top.css?v=2"></head>
 <body>
     <aside>
         <a class="brand" href="#dashboard"><?php echo htmlspecialchars(strtoupper($brandName)); ?><span>EVENT MANAGER</span></a>
@@ -104,5 +104,5 @@ if (!$isResetRequested && !empty($config['configured'])) {
         </div>
         <div id="app"></div>
     </main>
-</body>
+<script src="/back-to-top.js?v=2" defer></script></body>
 </html>
