@@ -114,3 +114,5 @@ jobs:
           echo "FTPS upload completed for ${GITHUB_REF_NAME} at ${GITHUB_SHA}"
 
 # Controlled Staging deployment verification — 2026-11-21
+
+# Production deployment activation — guarded initial upload, 2026-11-20
