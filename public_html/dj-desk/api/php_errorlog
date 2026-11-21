@@ -1,0 +1,9 @@
+[19-Nov-2026 04:36:07 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S02]: Base table or view not found: 1146 Table 'dbqgs92aggcp3s.djdesk_music_history' doesn't exist in /home/customer/www/music-matters.stackboost.net/public_html/dj-desk/api/Database.php:491
+Stack trace:
+#0 /home/customer/www/music-matters.stackboost.net/public_html/dj-desk/api/Database.php(491): PDO->exec('DELETE FROM djd...')
+#1 /home/customer/www/music-matters.stackboost.net/public_html/dj-desk/api/Database.php(504): DJ_Database::clear_sample_data()
+#2 /home/customer/www/music-matters.stackboost.net/public_html/dj-desk/api/Database.php(252): DJ_Database::seed_initial_data(true)
+#3 /home/customer/www/music-matters.stackboost.net/public_html/dj-desk/api/Database.php(63): DJ_Database::ensure_installed()
+#4 /home/customer/www/music-matters.stackboost.net/public_html/dj-desk/api/index.php(239): DJ_Database::init(Array)
+#5 {main}
+  thrown in /home/customer/www/music-matters.stackboost.net/public_html/dj-desk/api/Database.php on line 491

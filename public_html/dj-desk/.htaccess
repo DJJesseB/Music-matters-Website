@@ -1,0 +1,22 @@
+# DJ Live Request Desk & Event Manager
+# Standard shared webhost configuration
+
+DirectoryIndex index.php index.html
+
+# Prevent direct web access to sensitive configuration and data files
+<FilesMatch "^(config.*\.php|\.env|.*\.sqlite)$">
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</FilesMatch>
+
+# Ensure proper MIME types for ES modules, styles, and SVG QR codes
+<IfModule mod_mime.c>
+    AddType text/javascript .js
+    AddType text/css .css
+    AddType image/svg+xml .svg
+</IfModule>
