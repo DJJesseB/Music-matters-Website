@@ -1,5 +1,5 @@
 import {foamSticksControl} from './foam-sticks.js?v=205';
-import {privateAddons,corporateServices,quotePrivatePackage,clientDjHours} from './private-packages.js?v=180';
+import {privateAddons,corporateServices,quotePrivatePackage,clientDjHours} from './private-packages.js?v=206';
 export function serviceControls(saved={},corporate=false,admin=false){
  const input=(k,label,value=0,max=100,step=1)=>`<label>${label}<input data-service="${k}" type="number" min="0" max="${max}" step="${step}" value="${Number(saved[k]??value)}"></label>`;
  const lighting=`<label>Lighting upgrade<select data-service="lighting">${[['none','Included basic lighting'],['uplighting','8 wireless uplights — $250'],['advanced','Advanced dance-floor lighting — $250'],['advancedUplighting','Advanced lighting + 8 wireless uplights — $500'],['premium','Premium Lighting Package — $750']].map(([v,l])=>`<option value="${v}" ${saved.lighting===v?'selected':''}>${l}</option>`).join('')}</select><small>Premium includes 4 tube lights, 2 moving heads, 4 color wash lights, custom lighting design and show programming.</small></label>`;
