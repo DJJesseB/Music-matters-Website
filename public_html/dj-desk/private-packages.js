@@ -1,5 +1,5 @@
 export const clientDjHours=[2,3,4,4.5,5,5.5,6];
-import {quoteSchoolPackage,schoolAddons} from './school-packages.js';
+import {quoteSchoolPackage,schoolAddons} from './school-packages.js?v=211';
 export const privateAddons=schoolAddons;
 export const corporateServices={technician:{name:'Dedicated A/V technician',price:300,description:'Per hour'},microphones:{name:'Wireless desktop conference microphone system',price:2000,description:'8 push-to-talk microphones on stands, upgraded wireless antenna distribution, digital mixer with anti-feedback technology, and rolling all-in-one cart; per day'},pa:{name:'Professional PA sound reinforcement',price:1000,description:'Per day'},projector:{name:'Projector and presentation screen',price:2000,description:'Per day'}};
 export function quotePrivatePackage(input,{allowPendingTechnician=false}={}){
