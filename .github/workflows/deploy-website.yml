@@ -53,18 +53,13 @@ jobs:
           done
           [[ "$FTP_REMOTE_DIR" == /* ]] || { echo "::error::Remote directory must be absolute"; exit 1; }
           # Root "/" is permitted only for the separately scoped site-only FTPS accounts approved by the owner.
-      - name: Build upload package with one-time staging DJ-Desk Apache rules
+      - name: Build upload package without server-owned files
         shell: bash
         run: |
           set -euo pipefail
           destination="${RUNNER_TEMP}/site-deploy"
           mkdir -p "$destination"
-          htaccess_includes=()
-          if [[ "${GITHUB_REF_NAME}" == "Staging" ]]; then
-            htaccess_includes+=(--include='/dj-desk/.htaccess' --include='/dj-desk/api/.htaccess')
-          fi
           rsync -a --prune-empty-dirs \
-            "${htaccess_includes[@]}" \
             --exclude='**/.htaccess' \
             --exclude='**/.gitignore' \
             --exclude='/dj-desk/config.php' \
@@ -83,17 +78,10 @@ jobs:
             public_html/ "$destination/"
           test -s "$destination/index.html"
           test ! -e "$destination/dj-desk/config.php"
-          if [[ "${GITHUB_REF_NAME}" == "Staging" ]]; then
-            test -s "$destination/dj-desk/.htaccess"
-            test -s "$destination/dj-desk/api/.htaccess"
-          else
-            test ! -e "$destination/dj-desk/.htaccess"
-            test ! -e "$destination/dj-desk/api/.htaccess"
-          fi
           test ! -e "$destination/dj-desk/data"
           test ! -e "$destination/dj-desk/api/php_errorlog"
           test ! -e "$destination/dj-desk/api/emergency-reset.php"
-          if find "$destination" -type f \( -name '.htaccess' -o -name '.env' -o -name '*.sqlite*' -o -name '*.db' -o -name '*.log' -o -name 'php_errorlog' \) | grep -v -E "^${destination}/dj-desk/(api/)?\\.htaccess$" | grep -q .; then
+          if find "$destination" -type f \( -name '.htaccess' -o -name '.env' -o -name '*.sqlite*' -o -name '*.db' -o -name '*.log' -o -name 'php_errorlog' \) | grep -q .; then
             echo "::error::Protected file found in upload package"
             exit 1
           fi
