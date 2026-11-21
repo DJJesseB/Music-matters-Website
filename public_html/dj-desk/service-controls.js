@@ -1,4 +1,4 @@
-import {foamSticksControl} from './foam-sticks.js?v=180';
+import {foamSticksControl} from './foam-sticks.js?v=205';
 import {privateAddons,corporateServices,quotePrivatePackage,clientDjHours} from './private-packages.js?v=180';
 export function serviceControls(saved={},corporate=false,admin=false){
  const input=(k,label,value=0,max=100,step=1)=>`<label>${label}<input data-service="${k}" type="number" min="0" max="${max}" step="${step}" value="${Number(saved[k]??value)}"></label>`;

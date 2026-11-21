@@ -1,6 +1,6 @@
 import {mountStripePayments} from './stripe-ui.js?v=181';
 import {paymentGuide} from './payment-guide.js?v=184';
-import {packageDetails} from './package-ui.js?v=180';
+import {packageDetails} from './package-ui.js?v=205';
 export async function mountContracts({api,app,event,admin,esc,money,date,message,onSigned}){
  let preparedDeliveries=[];
  const prefix=(admin?'admin':'portal')+'/events/'+event.id+'/contracts';
