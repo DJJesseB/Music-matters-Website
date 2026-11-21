@@ -1,0 +1,76 @@
+name: Deploy DJ Jesse B website (FTPS)
+
+on:
+  push:
+    branches: [Staging, Production]
+    paths:
+      - "public_html/**"
+      - ".github/workflows/deploy-website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: |
+      (github.ref_name == 'Staging' && vars.STAGING_DEPLOY_ENABLED == 'true') ||
+      (github.ref_name == 'Production' && vars.PRODUCTION_DEPLOY_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'Production' && 'production' || 'staging' }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact branch commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify site bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s public_html/index.html
+          test -s public_html/style.css
+          test -s public_html/site.js
+          test ! -e public_html/.git
+      - name: Check deployment configuration
+        env:
+          FTP_HOST: ${{ secrets.SITE_FTPS_HOST }}
+          FTP_USER: ${{ secrets.SITE_FTPS_USER }}
+          FTP_PASSWORD: ${{ secrets.SITE_FTPS_PASSWORD }}
+          FTP_REMOTE_DIR: ${{ vars.SITE_FTPS_REMOTE_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in FTP_HOST FTP_USER FTP_PASSWORD FTP_REMOTE_DIR; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required FTPS setting: $name (configure this GitHub Environment)"
+              exit 1
+            fi
+          done
+          [[ "$FTP_REMOTE_DIR" == /* ]] || { echo "::error::Remote directory must be absolute"; exit 1; }
+          [[ "$FTP_REMOTE_DIR" != "/" ]] || { echo "::error::Set an explicit deployment folder, not /"; exit 1; }
+      - name: Install FTPS client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+      - name: Upload website over verified FTPS
+        env:
+          FTP_HOST: ${{ secrets.SITE_FTPS_HOST }}
+          FTP_USER: ${{ secrets.SITE_FTPS_USER }}
+          FTP_PASSWORD: ${{ secrets.SITE_FTPS_PASSWORD }}
+          FTP_REMOTE_DIR: ${{ vars.SITE_FTPS_REMOTE_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          deploy_script="$(mktemp)"
+          trap 'rm -f "$deploy_script"' EXIT
+          # Credentials live only in the temporary runner's restricted script.
+          printf 'set ftp:ssl-force true\nset ftp:ssl-protect-data true\nset ssl:verify-certificate true\nset net:max-retries 2\nset net:timeout 15\n' > "$deploy_script"
+          printf 'open -u "%s","%s" "ftp://%s"\n' "$FTP_USER" "$FTP_PASSWORD" "$FTP_HOST" >> "$deploy_script"
+          printf 'mirror --reverse --verbose --parallel=2 --no-perms --exclude-glob .git --exclude-glob .git/** --exclude-glob .DS_Store --exclude-glob *.bak "public_html/" "%s"\n' "$FTP_REMOTE_DIR" >> "$deploy_script"
+          printf 'bye\n' >> "$deploy_script"
+          lftp -f "$deploy_script"
+          echo "FTPS upload completed for ${GITHUB_REF_NAME} at ${GITHUB_SHA}"
