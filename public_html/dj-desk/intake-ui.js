@@ -1,3 +1,4 @@
+// Staging repair: restore inquiry module.
 import {additionalTimeControl,setAdditionalTimeAvailable} from './additional-time.js?v=205';
 import {foamSticksControl} from './foam-sticks.js?v=205';
 import {newId} from './request-id.js?v=180';
