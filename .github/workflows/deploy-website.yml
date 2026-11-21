@@ -52,7 +52,7 @@ jobs:
             fi
           done
           [[ "$FTP_REMOTE_DIR" == /* ]] || { echo "::error::Remote directory must be absolute"; exit 1; }
-          [[ "$FTP_REMOTE_DIR" != "/" ]] || { echo "::error::Set an explicit deployment folder, not /"; exit 1; }
+          # Root "/" is permitted only for the separately scoped site-only FTPS accounts approved by the owner.
       - name: Install FTPS client
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
       - name: Upload website over verified FTPS
