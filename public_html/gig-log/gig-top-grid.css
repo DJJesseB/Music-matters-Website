@@ -1,0 +1,25 @@
+.gig-top-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.gig-top-grid .gig-tile {
+  margin: 0;
+  aspect-ratio: 4 / 3;
+}
+
+.gig-top-grid .gig-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (max-width: 950px) {
+  .gig-top-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 540px) {
+  .gig-top-grid { gap: 10px; margin-bottom: 10px; }
+}
