@@ -1,5 +1,5 @@
 import {arrangeAddons} from './addon-layout.js?v=180';
-import {serviceControls,readServices,syncTechnician} from './service-controls.js?v=206';
+import {serviceControls,readServices,syncTechnician} from './service-controls.js?v=207';
 import {packageDetails} from './package-ui.js?v=205';
 import {calculateDeposit} from './pricing.js?v=180';
 export function privateIntake({body,key,api,app,head,esc,field,area,money,message,type}){
