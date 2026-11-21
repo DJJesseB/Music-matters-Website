@@ -12,7 +12,7 @@ function syncIncludedLighting(){for(const group of document.querySelectorAll('[d
   let row=group.querySelector('[data-included-'+tier+']');
   if(!row){row=document.createElement('div');row.className='lighting-upgrade-row';row.dataset['included'+tier[0].toUpperCase()+tier.slice(1)]='';row.innerHTML=`<label class="check-row"><input type="checkbox" checked disabled aria-label="${title} included"><span>${title} — $${price}<small>Included with your package · no additional charge</small></span></label><img alt="${title} preview" width="140" height="140" loading="lazy" data-addon-photo role="button" tabindex="0" aria-label="Enlarge ${title} preview" title="Click to enlarge">`;const before=group.querySelector(tier==='basic'?'[data-lighting-pick="uplighting"]':'[data-lighting-pick="leafSpinner"]')?.closest('.lighting-upgrade-row');if(before)before.before(row);else group.append(row);}
   row.hidden=!included;
-  if(included){const white=form.querySelector('[name="booth"],[data-package-pick="booth"]')?.value==='White';const img=row.querySelector('img'),src=tier==='basic'?'/basic-lighting-tubes-preview.webp':white?'/wedding-advanced-white-preview.png':'/wedding-advanced-black-preview.png';if(img.getAttribute('src')!==src)img.src=src;}
+  if(included){const white=form.querySelector('[name="booth"],[data-package-pick="booth"]')?.value==='White';const img=row.querySelector('img'),src=tier==='basic'?'/lighting-basic-preview.png':white?'/wedding-advanced-white-preview.png':'/wedding-advanced-black-preview.png';if(img.getAttribute('src')!==src)img.src=src;}
  }
 }}
 // Keep the included tier in sync with package and booth changes.
