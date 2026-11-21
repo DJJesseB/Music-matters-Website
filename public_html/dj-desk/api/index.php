@@ -33,6 +33,9 @@ register_shutdown_function(function () {
 // Load configurations and classes
 $configFile = dirname(__DIR__) . '/config.php';
 clearstatcache(true, $configFile);
+if (function_exists('opcache_invalidate') && file_exists($configFile)) {
+    @opcache_invalidate($configFile, true);
+}
 $config = file_exists($configFile) ? require $configFile : [];
 
 require_once __DIR__ . '/Database.php';
@@ -46,10 +49,13 @@ $mailConfig['admin_email'] = $config['admin']['email'] ?? 'djgourmet@me.com';
 $mailConfig['from_name'] = $mailConfig['from_name'] ?? ($config['brand']['name'] ?? 'DJ Jesse B');
 DJ_Mailer::init($mailConfig);
 
-// Try initializing DB if configured
+// Check for explicit reset flag (e.g. 'reset' => true or 'configured' => false)
+$isResetRequested = !empty($config['reset']) || !empty($config['reset_desk']) || (isset($config['configured']) && $config['configured'] === false);
+
+// Try initializing DB if configured and reset not requested
 $dbConnected = false;
 $dbError = '';
-if (!empty($config['configured'])) {
+if (!$isResetRequested && !empty($config['configured'])) {
     try {
         DJ_Database::init($config);
         $dbConnected = true;
@@ -57,6 +63,7 @@ if (!empty($config['configured'])) {
         $dbError = $e->getMessage();
     }
 }
+
 
 function save_config_file(array $cfg): array {
     $configFile = dirname(__DIR__) . '/config.php';
@@ -165,7 +172,18 @@ $baseUrl = $protocol . $host . ($appRoot ? $appRoot : '');
 
 if ($path === 'setup/status' && $method === 'GET') {
     $availableDrivers = PDO::getAvailableDrivers();
-    $configured = !empty($config['configured']);
+    
+    $hasAdminUser = false;
+    if ($dbConnected) {
+        try {
+            $users_table = DJ_Database::get_table_name('users');
+            $hasAdminUser = ((int)DJ_Database::get_var("SELECT COUNT(*) FROM $users_table WHERE role = 'admin'") > 0);
+        } catch (\Throwable $e) {
+            $hasAdminUser = false;
+        }
+    }
+
+    $configured = !$isResetRequested && !empty($config['configured']) && $dbConnected && $hasAdminUser;
     $configFile = dirname(__DIR__) . '/config.php';
     $writable = is_writable($configFile) || (!file_exists($configFile) && is_writable(dirname($configFile)));
     $db = $config['db'] ?? [
@@ -213,10 +231,20 @@ if ($path === 'setup/test-db' && $method === 'POST') {
 
 if ($path === 'setup/save' && $method === 'POST') {
     try {
-        $isConfigured = !empty($config['configured']);
-        if ($isConfigured && $dbConnected) {
+        $hasAdminUser = false;
+        if ($dbConnected) {
+            try {
+                $users_table = DJ_Database::get_table_name('users');
+                $hasAdminUser = ((int)DJ_Database::get_var("SELECT COUNT(*) FROM $users_table WHERE role = 'admin'") > 0);
+            } catch (\Throwable $e) {
+                $hasAdminUser = false;
+            }
+        }
+        $isConfigured = !$isResetRequested && !empty($config['configured']) && $dbConnected && $hasAdminUser;
+        if ($isConfigured) {
             require_admin();
         }
+
         $db = $input['db'] ?? [];
         if (empty($db['driver'])) {
             $db['driver'] = 'mysql';
@@ -1986,5 +2014,45 @@ if ($path === 'admin/seed-demo' && $method === 'POST') {
     json_response(['ok' => true, 'message' => 'Demo events and requests restored successfully.']);
 }
 
+if ($path === 'admin/reset-desk' && $method === 'POST') {
+    require_db();
+    require_admin();
+
+    $wipeTables = !empty($input['wipe_data']);
+    if ($wipeTables) {
+        DJ_Database::clear_sample_data();
+        try {
+            $users_table = DJ_Database::get_table_name('users');
+            $sessions_table = DJ_Database::get_table_name('sessions');
+            DJ_Database::pdo()->exec("DELETE FROM $sessions_table");
+            DJ_Database::pdo()->exec("DELETE FROM $users_table");
+        } catch (\Throwable $e) {}
+    }
+
+    $resetConfig = $config;
+    $resetConfig['configured'] = false;
+    $resetConfig['db']['name'] = '';
+    $resetConfig['db']['user'] = '';
+    $resetConfig['db']['pass'] = '';
+    $saveRes = save_config_file($resetConfig);
+
+    if (!$saveRes['ok']) {
+        json_error($saveRes['error'] ?? 'Failed to reset config.php', 500);
+    }
+
+    setcookie('dj_desk_session', '', [
+        'expires'  => time() - 3600,
+        'path'     => '/',
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
+
+    json_response([
+        'ok'      => true,
+        'message' => 'DJ-Desk configuration reset. Redirecting to Setup Wizard...'
+    ]);
+}
+
 // 404 Route Not Found
+
 json_error("Route not found: $path", 404);

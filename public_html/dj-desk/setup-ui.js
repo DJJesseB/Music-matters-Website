@@ -521,6 +521,18 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
             <button type="button" id="btnClearDemo" class="button secondary" style="border-color:#ff7d8a;color:#ffb6bd;">Clear All Sample Data</button>
           </div>
           <div id="demoNotice" class="test-result" hidden></div>
+
+          <div style="margin-top: 28px; padding-top: 24px; border-top: 1px solid #48513f;">
+            <strong style="color:var(--lime); font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; display:block; margin-bottom: 8px;">Production Reset & Rerun Setup Wizard</strong>
+            <p style="font-size: 13px; color: #cbd5e1; line-height: 1.5; margin-bottom: 16px;">
+              Ready to launch in production or re-configure credentials? You can reset DJ-Desk back to initial setup mode to enter fresh production database credentials, brand settings, and your primary administrator account.
+            </p>
+            <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+              <button type="button" id="btnResetDesk" class="button secondary" style="border-color:#ff7d8a; color:#ffb6bd;">Reset Configuration (Keep Tables)</button>
+              <button type="button" id="btnResetDeskWipe" class="button secondary" style="border-color:#ff4d4d; background:rgba(255,77,77,0.1); color:#ff6b6b;">⚠️ Factory Reset & Wipe Test Data</button>
+            </div>
+            <div id="resetDeskNotice" class="test-result" hidden style="margin-top: 14px;"></div>
+          </div>
         </fieldset>
       </section>
 
@@ -790,6 +802,46 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
         demoNotice.textContent = '✕ ' + err.message;
       }
     };
+
+    // Desk Reset handlers
+    const btnResetDesk = document.querySelector('#btnResetDesk');
+    const btnResetDeskWipe = document.querySelector('#btnResetDeskWipe');
+    const resetDeskNotice = document.querySelector('#resetDeskNotice');
+
+    const handleDeskReset = async (wipeData = false) => {
+      const promptMsg = wipeData
+        ? 'Are you sure you want to FACTORY RESET DJ-Desk?\n\nThis will permanently delete all test events, bookings, song requests, and contracts, and reset configuration so you can run the Setup Wizard from scratch.'
+        : 'Are you sure you want to reset the configuration?\n\nThis will return the system to initial setup mode so you can re-enter database and admin credentials. Existing database tables will be preserved.';
+      if (!confirm(promptMsg)) return;
+
+      if (resetDeskNotice) {
+        resetDeskNotice.hidden = false;
+        resetDeskNotice.className = 'test-result testing';
+        resetDeskNotice.textContent = 'Resetting desk configuration...';
+      }
+
+      try {
+        const res = await api('admin/reset-desk', 'POST', { wipe_data: wipeData });
+        if (resetDeskNotice) {
+          resetDeskNotice.className = 'test-result success';
+          resetDeskNotice.textContent = '✓ ' + (res.message || 'Reset complete. Relaunching Setup Wizard...');
+        }
+        message('Desk reset successfully. Relaunching Setup Wizard...');
+        setTimeout(() => {
+          window.location.hash = '';
+          window.location.reload();
+        }, 1200);
+      } catch (err) {
+        if (resetDeskNotice) {
+          resetDeskNotice.className = 'test-result error';
+          resetDeskNotice.textContent = '✕ ' + err.message;
+        }
+        message(err.message, true);
+      }
+    };
+
+    if (btnResetDesk) btnResetDesk.onclick = () => handleDeskReset(false);
+    if (btnResetDeskWipe) btnResetDeskWipe.onclick = () => handleDeskReset(true);
 
     // Save form handler
     const saveHandler = async (e) => {

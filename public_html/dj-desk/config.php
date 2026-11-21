@@ -4,21 +4,21 @@
  */
 
 return array (
-  'configured' => true,
+  'configured' => false,
   'db' => 
   array (
     'driver' => 'mysql',
     'host' => 'localhost',
     'port' => 3306,
-    'name' => 'dbqgs92aggcp3s',
-    'user' => 'ugjcymv7v2een',
-    'pass' => 'MusicBitches!',
+    'name' => '',
+    'user' => '',
+    'pass' => '',
     'charset' => 'utf8mb4',
-    'prefix' => 'djdesk_',
+    'prefix' => 'dj_',
   ),
   'admin' => 
   array (
-    'email' => 'jessandmac@gmail.com',
+    'email' => 'admin@example.com',
   ),
   'brand' => 
   array (
@@ -54,4 +54,3 @@ return array (
     'admin_copy' => false,
   ),
 );
-

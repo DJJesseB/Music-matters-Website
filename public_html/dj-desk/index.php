@@ -5,6 +5,10 @@
  */
 
 $configFile = __DIR__ . '/config.php';
+clearstatcache(true, $configFile);
+if (function_exists('opcache_invalidate') && file_exists($configFile)) {
+    @opcache_invalidate($configFile, true);
+}
 $config = file_exists($configFile) ? require $configFile : [];
 
 $brandName = $config['brand']['name'] ?? 'DJ Jesse B';
@@ -19,13 +23,19 @@ $baseDir = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/\\');
 $apiBase = ($baseDir === '' ? '' : $baseDir) . '/api/';
 
 // Test if database is configured & connected
+$isResetRequested = !empty($config['reset']) || !empty($config['reset_desk']) || (isset($config['configured']) && $config['configured'] === false);
 $dbConfigured = false;
 $dbMessage = '';
-if (!empty($config['configured'])) {
+if (!$isResetRequested && !empty($config['configured'])) {
     try {
         require_once __DIR__ . '/api/Database.php';
         DJ_Database::init($config);
-        $dbConfigured = true;
+        $users_table = DJ_Database::get_table_name('users');
+        $hasAdmin = ((int)DJ_Database::get_var("SELECT COUNT(*) FROM $users_table WHERE role = 'admin'") > 0);
+        $dbConfigured = $hasAdmin;
+        if (!$hasAdmin) {
+            $dbMessage = 'Database connected, but no administrator account exists. Setup wizard required.';
+        }
     } catch (\Throwable $e) {
         $dbMessage = $e->getMessage();
     }
