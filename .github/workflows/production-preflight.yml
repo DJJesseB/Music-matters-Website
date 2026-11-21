@@ -1,0 +1,87 @@
+name: Production deployment preflight (no uploads)
+
+on:
+  push:
+    branches: [Production]
+    paths:
+      - ".github/workflows/production-preflight.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Production snapshot
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate protected upload package
+        shell: bash
+        run: |
+          set -euo pipefail
+          destination="${RUNNER_TEMP}/site-preflight"
+          mkdir -p "$destination"
+          rsync -a --prune-empty-dirs \
+            --exclude='**/.htaccess' \
+            --exclude='**/.gitignore' \
+            --exclude='/dj-desk/config.php' \
+            --exclude='/dj-desk/data/***' \
+            --exclude='/dj-desk/api/php_errorlog' \
+            --exclude='/dj-desk/api/emergency-reset.php' \
+            --exclude='**/.env' \
+            --exclude='**/.env.*' \
+            --exclude='**/*.sqlite*' \
+            --exclude='**/*.db' \
+            --exclude='**/*.db-*' \
+            --exclude='**/*.log' \
+            --exclude='**/php_errorlog' \
+            --exclude='**/*.bak' \
+            --exclude='**/.DS_Store' \
+            public_html/ "$destination/"
+          test -s "$destination/index.html"
+          test ! -e "$destination/dj-desk/config.php"
+          test ! -e "$destination/dj-desk/data"
+          test ! -e "$destination/dj-desk/api/php_errorlog"
+          test ! -e "$destination/dj-desk/api/emergency-reset.php"
+          if find "$destination" -type f \( -name '.htaccess' -o -name '.env' -o -name '*.sqlite*' -o -name '*.db' -o -name '*.log' -o -name 'php_errorlog' \) | grep -q .; then
+            echo "::error::Protected server-owned file in upload package"
+            exit 1
+          fi
+          echo "Protected upload package verified; no files uploaded."
+      - name: Check production FTPS settings
+        env:
+          FTP_HOST: ${{ secrets.SITE_FTPS_HOST }}
+          FTP_USER: ${{ secrets.SITE_FTPS_USER }}
+          FTP_PASSWORD: ${{ secrets.SITE_FTPS_PASSWORD }}
+          FTP_REMOTE_DIR: ${{ vars.SITE_FTPS_REMOTE_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in FTP_HOST FTP_USER FTP_PASSWORD FTP_REMOTE_DIR; do
+            [[ -n "${!name}" ]] || { echo "::error::Missing $name"; exit 1; }
+          done
+          [[ "$FTP_REMOTE_DIR" == /* ]] || exit 1
+      - name: Test read-only FTPS connection
+        env:
+          FTP_HOST: ${{ secrets.SITE_FTPS_HOST }}
+          FTP_USER: ${{ secrets.SITE_FTPS_USER }}
+          FTP_PASSWORD: ${{ secrets.SITE_FTPS_PASSWORD }}
+          FTP_REMOTE_DIR: ${{ vars.SITE_FTPS_REMOTE_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lftp
+          umask 077
+          script="$(mktemp)"
+          trap 'rm -f "$script"' EXIT
+          printf 'set ftp:ssl-force true\nset ftp:ssl-protect-data true\nset ssl:verify-certificate true\nset ssl:check-hostname false\nset net:max-retries 2\nset net:timeout 15\n' > "$script"
+          printf 'open -u "%s","%s" "ftp://%s"\n' "$FTP_USER" "$FTP_PASSWORD" "$FTP_HOST" >> "$script"
+          printf 'cd "%s"\ncls -1 >/dev/null\nbye\n' "$FTP_REMOTE_DIR" >> "$script"
+          lftp -f "$script"
+          echo "Production FTPS read-only connection verified; no files uploaded."
