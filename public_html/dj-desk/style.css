@@ -213,3 +213,7 @@ img[data-addon-photo]{cursor:zoom-in}img[data-addon-photo]:focus-visible{outline
  .ipad-played-group>.song-table-scroll,.ipad-denied-group>.song-table-scroll{border:0;border-radius:0}
  .ipad-played-group .song-table tbody>.song-played{display:table-row}
 }
+.insurance-card .insurance-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:20px 0}
+.insurance-card .insurance-details>div{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:14px;border:1px solid rgba(160,160,180,.3);border-radius:12px;overflow-wrap:anywhere}
+.insurance-card .insurance-details strong{font-size:1rem}
+.insurance-card .insurance-actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
