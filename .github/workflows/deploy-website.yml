@@ -1,0 +1,116 @@
+name: Deploy DJ Jesse B website (FTPS)
+
+on:
+  push:
+    branches: [Staging, Production]
+    paths:
+      - "public_html/**"
+      - ".github/workflows/deploy-website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: |
+      (github.ref_name == 'Staging' && vars.STAGING_DEPLOY_ENABLED == 'true') ||
+      (github.ref_name == 'Production' && vars.PRODUCTION_DEPLOY_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'Production' && 'production' || 'staging' }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact branch commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify site bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s public_html/index.html
+          test -s public_html/style.css
+          test -s public_html/site.js
+          test ! -e public_html/.git
+      - name: Check deployment configuration
+        env:
+          FTP_HOST: ${{ secrets.SITE_FTPS_HOST }}
+          FTP_USER: ${{ secrets.SITE_FTPS_USER }}
+          FTP_PASSWORD: ${{ secrets.SITE_FTPS_PASSWORD }}
+          FTP_REMOTE_DIR: ${{ vars.SITE_FTPS_REMOTE_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in FTP_HOST FTP_USER FTP_PASSWORD FTP_REMOTE_DIR; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required FTPS setting: $name (configure this GitHub Environment)"
+              exit 1
+            fi
+          done
+          [[ "$FTP_REMOTE_DIR" == /* ]] || { echo "::error::Remote directory must be absolute"; exit 1; }
+          # Root "/" is permitted only for the separately scoped site-only FTPS accounts approved by the owner.
+      - name: Build upload package without server-owned files
+        shell: bash
+        run: |
+          set -euo pipefail
+          destination="${RUNNER_TEMP}/site-deploy"
+          mkdir -p "$destination"
+          rsync -a --prune-empty-dirs \
+            --exclude='**/.htaccess' \
+            --exclude='**/.gitignore' \
+            --exclude='/dj-desk/config.php' \
+            --exclude='/dj-desk/data/***' \
+            --exclude='/dj-desk/api/php_errorlog' \
+            --exclude='/dj-desk/api/emergency-reset.php' \
+            --exclude='**/.env' \
+            --exclude='**/.env.*' \
+            --exclude='**/*.sqlite*' \
+            --exclude='**/*.db' \
+            --exclude='**/*.db-*' \
+            --exclude='**/*.log' \
+            --exclude='**/php_errorlog' \
+            --exclude='**/*.bak' \
+            --exclude='**/.DS_Store' \
+            public_html/ "$destination/"
+          test -s "$destination/index.html"
+          test ! -e "$destination/dj-desk/config.php"
+          test ! -e "$destination/dj-desk/data"
+          test ! -e "$destination/dj-desk/api/php_errorlog"
+          test ! -e "$destination/dj-desk/api/emergency-reset.php"
+          if find "$destination" -type f \( -name '.htaccess' -o -name '.env' -o -name '*.sqlite*' -o -name '*.db' -o -name '*.log' -o -name 'php_errorlog' \) | grep -q .; then
+            echo "::error::Protected file found in upload package"
+            exit 1
+          fi
+          echo "Prepared guarded site package from public_html/"
+      - name: Install FTPS client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+      - name: Upload website over verified FTPS
+        env:
+          FTP_HOST: ${{ secrets.SITE_FTPS_HOST }}
+          FTP_USER: ${{ secrets.SITE_FTPS_USER }}
+          FTP_PASSWORD: ${{ secrets.SITE_FTPS_PASSWORD }}
+          FTP_REMOTE_DIR: ${{ vars.SITE_FTPS_REMOTE_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          deploy_script="$(mktemp)"
+          trap 'rm -f "$deploy_script"' EXIT
+          # Credentials live only in the temporary runner's restricted script.
+          printf 'set ftp:ssl-force true\nset ftp:ssl-protect-data true\nset ssl:verify-certificate true\nset net:max-retries 2\nset net:timeout 15\n' > "$deploy_script"
+          # Shared-host FTPS presents the provider certificate for the Staging alias.
+          # Keep CA chain verification on; only exempt the Staging hostname check.
+          if [[ "${GITHUB_REF_NAME}" == "Staging" ]]; then
+            printf 'set ssl:check-hostname false\n' >> "$deploy_script"
+          fi
+          printf 'open -u "%s","%s" "ftp://%s"\n' "$FTP_USER" "$FTP_PASSWORD" "$FTP_HOST" >> "$deploy_script"
+          printf 'mirror --reverse --verbose --parallel=2 --no-perms "%s" "%s"\n' "${RUNNER_TEMP}/site-deploy/" "$FTP_REMOTE_DIR" >> "$deploy_script"
+          printf 'bye\n' >> "$deploy_script"
+          lftp -f "$deploy_script"
+          echo "FTPS upload completed for ${GITHUB_REF_NAME} at ${GITHUB_SHA}"
+
+# Controlled Staging deployment verification — 2026-11-21
