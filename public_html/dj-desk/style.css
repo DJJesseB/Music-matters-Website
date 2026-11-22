@@ -220,6 +220,21 @@ img[data-addon-photo]{cursor:zoom-in}img[data-addon-photo]:focus-visible{outline
 
 /* Keep public inquiry submit actions in the form flow, never floating over content. */
 .intake-details .actions{position:static;bottom:auto}
+.social-platforms{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-bottom:22px}
+.social-platforms .card{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.social-platforms .card p{flex:1}
+.social-section-head,.social-post-meta,.social-post-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.social-section-head{justify-content:space-between;margin-bottom:20px}
+.social-section-head p{margin-top:6px}
+.social-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:26px}
+.social-form label{display:flex;flex-direction:column;gap:8px;font-weight:650}
+.social-form input,.social-form select,.social-form textarea{width:100%;min-width:0}
+.social-wide{grid-column:1/-1}
+.social-post{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:20px 0;border-top:1px solid #455043}
+.social-post h3{margin:10px 0}.social-post p{white-space:pre-wrap;overflow-wrap:anywhere}
+.social-post-actions{justify-content:flex-end;flex-shrink:0}
+.social-note,.social-empty{color:#acb9ad;font-size:14px}
+@media(max-width:780px){.social-platforms,.social-form{grid-template-columns:1fr}.social-post{flex-direction:column}.social-post-actions{justify-content:flex-start}}
 .availability-review{margin-top:22px;padding:20px;border:1px solid #526044;border-radius:14px;background:#202820}
 .availability-review h3{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:0 0 12px;font-size:1.15rem}
 .availability-review p{margin:8px 0}.availability-review ul{margin:12px 0;padding-left:24px}
