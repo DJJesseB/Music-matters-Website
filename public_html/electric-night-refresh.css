@@ -96,3 +96,41 @@ footer .footer-faq{row-gap:14px}
 }
 @media(prefers-reduced-motion:reduce){.primary{transition:none}.primary:hover,.primary:active{transform:none}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+/* Unified footer navigation buttons — Electric Night */
+.footer-faq :is(.reviews-footer-link,.faq-launch,.gig-log-link){
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  box-sizing:border-box;
+  min-height:48px;
+  margin:0;
+  padding:15px 20px;
+  background:#202520;
+  color:#fff;
+  border:1px solid #914dff;
+  border-radius:6px;
+  font-size:17px;
+  font-weight:700;
+  line-height:1.35;
+  text-align:center;
+  text-decoration:none;
+  box-shadow:none;
+  text-shadow:none;
+  transition:background-color .2s,border-color .2s,color .2s;
+}
+.footer-faq :is(.reviews-footer-link,.faq-launch,.gig-log-link):hover{
+  background:#914dff;
+  border-color:#b58aff;
+  color:#fff;
+}
+.footer-faq :is(.reviews-footer-link,.faq-launch,.gig-log-link):focus-visible{
+  outline:3px solid #b6ff35;
+  outline-offset:4px;
+}
+@media(max-width:700px){
+  .footer-faq :is(.reviews-footer-link,.faq-launch,.gig-log-link){width:100%}
+}
+@media(prefers-reduced-motion:reduce){
+  .footer-faq :is(.reviews-footer-link,.faq-launch,.gig-log-link){transition:none}
+}
