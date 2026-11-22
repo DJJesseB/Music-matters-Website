@@ -26,8 +26,7 @@ export function quoteSchoolPackage(input){
  const guestCount=selection.guestCount??0;if(!Number.isInteger(guestCount)||guestCount<0||guestCount>100000)fail('Guest count must be a whole number');
  const additionalSound=selection.additionalSound??false,extraSubwoofers=selection.extraSubwoofers??0;if(typeof additionalSound!=='boolean')fail('Invalid additional sound system selection');if(!Number.isInteger(extraSubwoofers)||extraSubwoofers<0||extraSubwoofers>20)fail('Choose 0–20 additional subwoofers');
  if(!['Premium'].includes(selection.booth))fail('The school package includes a premium DJ booth');
- if(!Number.isInteger(selection.extraHalfHours)||selection.extraHalfHours<0||selection.extraHalfHours>4)fail('Additional dancing is limited to 2 extra hours (4 half-hour blocks)');
- if(base.id==='standard2'&&selection.extraHalfHours>0)fail('For more than two hours, choose The Standard School Dance Experience — 3 hours or 4 hours. Additional dancing is available after the three-hour package at $100 per half-hour.');
+ if(selection.extraHalfHours!==0)fail('School dance coverage is limited to four hours. Contact DJ Jesse B for a custom quote for longer events.');
  const lighting=selection.lighting==='none'?[]:selection.lighting==='advancedUplighting'?['advanced','uplighting']:typeof selection.lighting==='string'?selection.lighting.split('+'):['invalid'];
  if(new Set(lighting).size!==lighting.length||lighting.some(k=>!['uplighting','advanced','premium'].includes(k)))fail('Choose valid lighting upgrades');
  const chargedLighting=lighting;
