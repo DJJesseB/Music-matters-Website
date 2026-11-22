@@ -169,6 +169,53 @@ $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $appRoot = rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/\\');
 $baseUrl = $protocol . $host . ($appRoot ? $appRoot : '');
 
+// Private business ledger; created lazily so existing installations migrate safely.
+if (strpos($path, 'admin/finance') === 0) {
+    require_db();
+    require_admin();
+    $ledger = DJ_Database::get_table_name('finance_items');
+    DJ_Database::pdo()->exec("CREATE TABLE IF NOT EXISTS $ledger (
+        id varchar(64) NOT NULL PRIMARY KEY,
+        kind varchar(16) NOT NULL,
+        title varchar(255) NOT NULL,
+        amount decimal(12,2) NOT NULL DEFAULT 0,
+        category varchar(100) NOT NULL DEFAULT '',
+        item_date date NOT NULL,
+        frequency varchar(16) NOT NULL DEFAULT 'once',
+        end_date date NULL,
+        status varchar(32) NOT NULL DEFAULT '',
+        notes text NULL,
+        created_at datetime NOT NULL
+    )");
+    if ($path === 'admin/finance' && $method === 'GET') {
+        json_response(DJ_Database::get_results("SELECT * FROM $ledger ORDER BY item_date DESC, created_at DESC"));
+    }
+    if ($path === 'admin/finance' && $method === 'POST') {
+        $kind = (string)($input['kind'] ?? '');
+        $frequency = (string)($input['frequency'] ?? 'once');
+        $title = trim((string)($input['title'] ?? ''));
+        $amount = $input['amount'] ?? null;
+        $dateValue = (string)($input['item_date'] ?? '');
+        $endDate = (string)($input['end_date'] ?? '');
+        if (!in_array($kind, ['income','expense','wish'], true) || !in_array($frequency, ['once','monthly','yearly'], true)) json_error('Invalid entry type or frequency');
+        if ($kind !== 'expense') $frequency = 'once';
+        if ($title === '' || mb_strlen($title) > 255) json_error('Enter a description (255 characters maximum)', 400, 'title');
+        if (!is_numeric($amount) || !is_finite((float)$amount) || (float)$amount < 0 || (float)$amount > 99999999) json_error('Enter a valid positive amount', 400, 'amount');
+        $validDate = static function($value) { $d = DateTimeImmutable::createFromFormat('!Y-m-d', $value); return $d && $d->format('Y-m-d') === $value; };
+        if (!$validDate($dateValue) || ($endDate !== '' && (!$validDate($endDate) || $endDate < $dateValue))) json_error('Enter a valid date range', 400, 'item_date');
+        $status = (string)($input['status'] ?? '');
+        if ($kind === 'wish' && !in_array($status, ['Considering','Saving','Ready to buy','Purchased'], true)) json_error('Invalid wish-list status');
+        $id = DJ_Database::uuid();
+        DJ_Database::insert($ledger, ['id'=>$id,'kind'=>$kind,'title'=>$title,'amount'=>round((float)$amount,2),'category'=>substr(trim((string)($input['category'] ?? '')),0,100),'item_date'=>$dateValue,'frequency'=>$frequency,'end_date'=>$endDate ?: null,'status'=>$kind === 'wish' ? $status : '', 'notes'=>substr(trim((string)($input['notes'] ?? '')),0,2000),'created_at'=>DJ_Database::now()]);
+        json_response(['id'=>$id], 201);
+    }
+    if (preg_match('#^admin/finance/([a-f0-9-]+)$#', $path, $financeMatch) && $method === 'DELETE') {
+        DJ_Database::delete($ledger, ['id'=>$financeMatch[1]]);
+        json_response(['ok'=>true]);
+    }
+    json_error('Unsupported finance request', 405);
+}
+
 // -------------------------------------------------------------
 // 1. SETUP & CONFIGURATION ROUTES
 // -------------------------------------------------------------
