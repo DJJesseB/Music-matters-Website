@@ -48,13 +48,45 @@ The right music. The right moment.
 import {installQuestionForm} from './faq-question.js';
 const library=document.querySelector('.faq-library.faq-page');
 if(library){
-library.innerHTML=`<div class="faq-top"><div><p class="eyebrow">A LITTLE GUIDANCE. A LOT OF HEART.</p><h1 id="faq-title">FAQ’s & helpful guides</h1><p>Get to know DJ Jesse B, find a little inspiration, and feel ready for your celebration.</p></div><a class="faq-close" href="/">Back to website</a></div><div class="faq-layout"><nav class="faq-nav" aria-label="Helpful guides"></nav><div class="faq-reading"><article class="faq-article" tabindex="-1"></article></div></div>`;
-let active=documents[0];
-const article=library.querySelector('article'),navigation=library.querySelector('.faq-nav');
-for(const doc of documents){const button=document.createElement('a');button.href='#'+doc.id;button.dataset.guide=doc.id;button.innerHTML='<span></span><strong></strong><i aria-hidden="true">→</i>';button.querySelector('span').textContent=doc.category;button.querySelector('strong').textContent=doc.label;navigation.append(button);}
-const note=document.createElement('p');note.className='faq-library-note';note.textContent='More practical guides will join the library as we grow. Have a question in the meantime? DJ Jesse B is happy to help.';navigation.append(note);
-function select(doc,focus=false){active=doc;article.replaceChildren();const category=document.createElement('p');category.className='eyebrow';category.textContent=doc.category;const title=document.createElement('h2');title.className='faq-document-title';title.textContent=doc.title;const intro=document.createElement('p');intro.className='faq-intro';intro.textContent=doc.subtitle;article.append(category,title,intro);for(const block of doc.body.split(/\n\s*\n/)){const heading=block.startsWith('## ')||doc.id==='speeches'&&block.length<90&&/[A-Z]/.test(block)&&block===block.toUpperCase();const p=document.createElement(heading?'h3':block.startsWith('“To everyone')?'blockquote':'p');p.textContent=block.replace(/^## /,'');article.append(p);}if(doc.pdf){const link=document.createElement('a');link.className='outline faq-printable-link';link.href=new URL(doc.pdf.replace(/^\//,''),new URL('.',import.meta.url)).href;link.target='_blank';link.rel='noopener';link.textContent='Open printable PDF';article.append(link);}navigation.querySelectorAll('[data-guide]').forEach(b=>{if(b.dataset.guide===doc.id)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});if(focus){article.focus({preventScroll:true});article.scrollIntoView({block:'start',behavior:'instant'});}}
-function route(){const doc=documents.find(item=>'#'+item.id===location.hash)||documents[0];select(doc,location.hash!=='');}
+library.innerHTML=`<div class="faq-top"><div><p class="eyebrow">THE RIGHT ANSWERS. THE RIGHT MOMENT.</p><h1 id="faq-title">Help & planning center</h1><p>Explore wedding inspiration, event planning tools, and the experience behind the music.</p></div><a class="faq-close" href="/">Back to website</a></div><div class="faq-layout"><nav class="faq-nav" aria-label="Guide categories"></nav><div class="faq-reading"><div class="faq-home"></div><article class="faq-article" tabindex="-1" hidden></article></div></div>`;
+const groups=[
+ {name:'Weddings',description:'The music, the moments, and your favorite people.',icon:'♥',ids:['wedding-music-philosophy','wedding-day','speeches','djsplaining']},
+ {name:'Private celebrations',description:'A soundtrack built around someone special.',icon:'♫',ids:['celebrations']},
+ {name:'Booking & planning',description:'What to expect and what to prepare.',icon:'☑',ids:['booking','wedding-printable','school-printable']},
+ {name:'Behind the booth',description:'Sound, lighting, and thoughtful preparation.',icon:'◉',ids:['gear']},
+ {name:'Meet DJ Jesse B',description:'The story behind the music.',icon:'★',ids:['bio']}
+];
+const friendlyLabels={
+ 'wedding-music-philosophy':'How Jesse builds your wedding soundtrack',
+ 'wedding-day':'Enjoy your wedding day',speeches:'Wedding speeches & toasts',
+ djsplaining:'What goes into wedding preparation',
+ celebrations:'Birthdays & anniversaries: your soundtrack',
+ booking:'From booking to the last dance',
+ 'wedding-printable':'Printable wedding planner',
+ 'school-printable':'Printable prom & school dance planner',
+ gear:'Professional sound, lighting & equipment',bio:'The story behind the booth'
+};
+const article=library.querySelector('article'),home=library.querySelector('.faq-home'),navigation=library.querySelector('.faq-nav');
+const homeLink=document.createElement('a');homeLink.href='#';homeLink.className='faq-home-link';homeLink.textContent='All guides & resources';navigation.append(homeLink);
+for(const group of groups){
+ const section=document.createElement('details');section.className='faq-nav-group';section.open=!window.matchMedia('(max-width: 850px)').matches;
+ const heading=document.createElement('summary');heading.textContent=group.name;section.append(heading);
+ const links=document.createElement('div');links.className='faq-nav-links';
+ for(const id of group.ids){const doc=documents.find(item=>item.id===id);if(!doc)continue;
+  const link=document.createElement('a');link.href='#'+id;link.dataset.guide=id;link.textContent=friendlyLabels[id]||doc.label;links.append(link);}
+ section.append(links);navigation.append(section);
+}
+const note=document.createElement('p');note.className='faq-library-note';note.textContent='Still have a question? Use “Ask a question” above and Jesse will be happy to help.';navigation.append(note);
+home.innerHTML=`<section class="faq-feature"><p class="eyebrow">FEATURED WEDDING GUIDE</p><h2>Your wedding. Every generation. One unforgettable night.</h2><p>Start with everyone. Build the energy. Finish with your favorites. Discover Jesse’s approach to creating a soundtrack that brings the whole room together.</p><a class="primary" href="#wedding-music-philosophy">Read the wedding music philosophy</a></section><div class="faq-home-heading"><h2>What can we help you with?</h2><p>Choose a topic to find the right guide or planning resource.</p></div><div class="faq-category-grid"></div>`;
+const grid=home.querySelector('.faq-category-grid');
+for(const group of groups){const card=document.createElement('a');card.href='#'+group.ids[0];card.className='faq-category-card';
+ const icon=document.createElement('span');icon.className='faq-category-icon';icon.setAttribute('aria-hidden','true');icon.textContent=group.icon;
+ const name=document.createElement('strong');name.textContent=group.name;
+ const description=document.createElement('span');description.textContent=group.description;
+ const count=document.createElement('small');count.textContent=group.ids.length===1?'1 guide':group.ids.length+' guides';
+ card.append(icon,name,description,count);grid.append(card);}
+function select(doc,focus=false){home.hidden=true;article.hidden=false;article.replaceChildren();const category=document.createElement('p');category.className='eyebrow';category.textContent=groups.find(group=>group.ids.includes(doc.id))?.name||doc.category;const title=document.createElement('h2');title.className='faq-document-title';title.textContent=doc.title;const intro=document.createElement('p');intro.className='faq-intro';intro.textContent=doc.subtitle;article.append(category,title,intro);for(const block of doc.body.split(/\n\s*\n/)){const heading=block.startsWith('## ')||doc.id==='speeches'&&block.length<90&&/[A-Z]/.test(block)&&block===block.toUpperCase();const p=document.createElement(heading?'h3':block.startsWith('“To everyone')?'blockquote':'p');p.textContent=block.replace(/^## /,'');article.append(p);}if(doc.pdf){const link=document.createElement('a');link.className='outline faq-printable-link';link.href=new URL(doc.pdf.replace(/^\//,''),new URL('.',import.meta.url)).href;link.target='_blank';link.rel='noopener';link.textContent='Open printable PDF';article.append(link);}navigation.querySelectorAll('[data-guide]').forEach(b=>{if(b.dataset.guide===doc.id){b.setAttribute('aria-current','page');b.closest('details').open=true;}else b.removeAttribute('aria-current');});homeLink.removeAttribute('aria-current');if(focus){article.focus({preventScroll:true});article.scrollIntoView({block:'start',behavior:'instant'});}}
+function route(){const doc=documents.find(item=>'#'+item.id===location.hash);if(doc){select(doc,location.hash!=='');}else{article.hidden=true;home.hidden=false;navigation.querySelectorAll('[data-guide]').forEach(b=>b.removeAttribute('aria-current'));homeLink.setAttribute('aria-current','page');}}
 window.addEventListener('hashchange',route);route();
 installQuestionForm(library);
 }
