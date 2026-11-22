@@ -220,3 +220,8 @@ img[data-addon-photo]{cursor:zoom-in}img[data-addon-photo]:focus-visible{outline
 
 /* Keep public inquiry submit actions in the form flow, never floating over content. */
 .intake-details .actions{position:static;bottom:auto}
+.availability-review{margin-top:22px;padding:20px;border:1px solid #526044;border-radius:14px;background:#202820}
+.availability-review h3{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:0 0 12px;font-size:1.15rem}
+.availability-review p{margin:8px 0}.availability-review ul{margin:12px 0;padding-left:24px}
+.availability-review li{margin:7px 0}.availability-review .check-row{display:flex;gap:12px;align-items:flex-start;margin-top:16px;font-size:1rem}
+.availability-review .check-row input{width:20px;height:20px;flex-shrink:0;accent-color:#b6ff35}

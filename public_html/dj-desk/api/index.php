@@ -1688,11 +1688,43 @@ if ($path === 'intake/requests' && $method === 'POST') {
     json_response(['reference' => $id, 'status' => 'Awaiting admin review']);
 }
 
+// Same-day commitments are treated conservatively: without reliable setup/travel
+// times, a different event on the date is not proof that the slot is free.
+function request_availability(array $request, string $requestId, array $events, array $pending): array {
+    $date = $request['date'] ?? '';
+    $conflicts = [];
+    $otherRequests = [];
+    if (!$date || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        return ['level' => 'review', 'events' => [], 'requests' => [], 'reasons' => ['A valid event date is required.']];
+    }
+    foreach ($events as $event) {
+        if (($event['date'] ?? '') !== $date || in_array($event['status'] ?? '', ['Canceled', 'Archived'], true)) continue;
+        $conflicts[] = [
+            'name' => $event['name'] ?? 'Existing event',
+            'status' => $event['status'] ?? 'Unknown',
+            'startTime' => $event['startTime'] ?? '',
+            'endTime' => $event['endTime'] ?? ''
+        ];
+    }
+    foreach ($pending as $row) {
+        if ($row['id'] === $requestId || $row['state'] !== 'Pending') continue;
+        $body = json_decode($row['body'], true) ?: [];
+        if (($body['date'] ?? '') === $date) $otherRequests[] = ['name' => $body['name'] ?? 'Other inquiry'];
+    }
+    $reasons = [];
+    if ($conflicts) $reasons[] = 'Existing event on this date; verify commitments, setup and travel.';
+    if ($otherRequests) $reasons[] = 'Another pending inquiry requests this date.';
+    if (empty($request['venue'])) $reasons[] = 'Venue not yet provided.';
+    if (empty($request['startTime']) || empty($request['endTime'])) $reasons[] = 'Event hours and travel/setup feasibility have not been verified.';
+    return ['level' => $reasons ? 'review' : 'available', 'events' => $conflicts, 'requests' => $otherRequests, 'reasons' => $reasons];
+}
+
 if ($path === 'admin/requests' && $method === 'GET') {
     require_db();
     require_admin();
     $reqs_table = DJ_Database::get_table_name('booking_requests');
     $rows = DJ_Database::get_results("SELECT * FROM $reqs_table ORDER BY created_at DESC");
+    $eventsForReview = DJ_Database::get_all_events();
     $results = [];
     foreach ($rows as $r) {
         $b = json_decode($r['body'], true) ?: [];
@@ -1722,6 +1754,7 @@ if ($path === 'admin/requests' && $method === 'GET') {
             'version' => (int)$r['version'],
             'createdAt' => $r['created_at'],
             'workflow' => $workflow
+            ,'availability' => request_availability($b, $r['id'], $eventsForReview, $rows)
         ]);
     }
     json_response($results);
@@ -1740,6 +1773,11 @@ if (preg_match('#^admin/requests/([a-f0-9-]+)/(approve|decline|response)$#', $pa
     $b = json_decode($row['body'], true) ?: [];
 
     if ($action === 'approve') {
+        if ($row['state'] !== 'Pending') json_error('This request has already been reviewed. Refresh the list.', 409);
+        $availability = request_availability($b, $id, DJ_Database::get_all_events(), DJ_Database::get_results("SELECT * FROM $reqs_table WHERE state = 'Pending'"));
+        if ($availability['level'] !== 'available' && empty($input['acknowledgeReview'])) {
+            json_error('Availability review is required before approving this date. Refresh and review the conflicts.', 409);
+        }
         $eventInput = [
             'name' => ($b['name'] ?? 'Client') . ' • ' . ($b['type'] ?? 'Event'),
             'type' => $b['type'] ?? 'Wedding',

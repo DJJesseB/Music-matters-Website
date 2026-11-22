@@ -47,7 +47,7 @@ if (!$isResetRequested && !empty($config['configured'])) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title><?php echo htmlspecialchars($brandName); ?> · Live Event Desk</title>
-    <link rel="stylesheet" href="./style.css?v=202">
+    <link rel="stylesheet" href="./style.css?v=214">
     <script>
         window.djDeskConfig = {
             apiBase: '<?php echo addslashes($apiBase); ?>',
