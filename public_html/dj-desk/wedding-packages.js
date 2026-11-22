@@ -12,7 +12,7 @@ export const weddingAddons={
  tops:{name:'Additional 15-inch PA speaker pair (tops)',price:500,description:'Two 15-inch PA speakers per pair; subwoofers are separate'},
  additionalSound:{name:'Additional sound system package',price:1000,description:'2 × 15-inch PA speakers and 1 × 18-inch subwoofer'},
  subwoofer:{name:'Additional 18-inch subwoofer',price:250,description:'Per extra subwoofer, beyond any subwoofer included with the additional sound system'},
- additionalDancing:{name:'Additional dancing',price:200,description:'Per half-hour'},
+ additionalDancing:{name:'Additional dancing',price:150,description:'Per half-hour, booked in advance or approved at the event'},
  advancedUplighting:{name:'Advanced lighting + wireless uplighting',price:750,description:'Advanced wedding lighting (four light tubes and two RockOn-7 moving heads) plus 8 wireless uplights'},
  advanced:{name:'Advanced Lighting Package',price:500,description:'Four light tubes plus two RockOn-7 moving-head lights on a T-bar stand; replaces included Basic lighting when purchased separately'},
  uplighting:{name:'Wireless uplighting',price:250,description:'8 wireless uplights'},
@@ -57,7 +57,7 @@ export function quoteWeddingPackage(input,{admin=false}={}){
  if(additionalSound)items.push({...weddingAddons.additionalSound,quantity:1,unitPrice:1000,total:1000,automatic:false});
  if(extraTopPairs)items.push({name:'Additional 15-inch PA speaker pair (tops)',quantity:extraTopPairs,unitPrice:500,total:extraTopPairs*500,description:'Two 15-inch PA speakers per pair; subwoofers are separate'});
  if(extraSubwoofers)items.push({...weddingAddons.subwoofer,quantity:extraSubwoofers,unitPrice:250,total:extraSubwoofers*250});
- if(clean.extraHalfHours)items.push({...weddingAddons.additionalDancing,quantity:clean.extraHalfHours,unitPrice:200,total:clean.extraHalfHours*200});
+ if(clean.extraHalfHours)items.push({...weddingAddons.additionalDancing,quantity:clean.extraHalfHours,unitPrice:150,total:clean.extraHalfHours*150});
  for(const key of chargedLighting){const a=weddingAddons[key];items.push({...a,quantity:1,unitPrice:a.price,total:a.price});}
  for(const key of ['bubbles','haze'])if(clean[key]){const a=weddingAddons[key];items.push({...a,quantity:1,unitPrice:a.price,total:a.price,venueApproval:clean[key+'Approval']});}
  if(charge)items.push({name:chargeNote,quantity:1,unitPrice:charge,total:charge});
