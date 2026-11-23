@@ -43,7 +43,8 @@ export function musicUI({api, app, head, esc, date, message}) {
         function navigation() {
             const nav = document.createElement('div');
             nav.className = 'guest-hub-nav music-guest-nav';
-            nav.innerHTML = '<button type="button" data-guest-song>Request a song</button>'
+            nav.innerHTML = (data.photos?.enabled ? '<button type="button" class="secondary" data-guest-home>Event home</button>' : '')
+                + '<button type="button" data-guest-song>Request a song</button>'
                 + '<button type="button" class="secondary" data-guest-mine>My requests</button>'
                 + (data.photos?.enabled ? '<button type="button" class="secondary" data-guest-photo>Share photos</button>' : '');
             app.querySelector('.heading').after(nav);
@@ -51,10 +52,21 @@ export function musicUI({api, app, head, esc, date, message}) {
             nav.querySelector('[data-guest-mine]').onclick = historyView;
             const photos = nav.querySelector('[data-guest-photo]');
             if (photos) photos.onclick = showPhotos;
+            const homeButton = nav.querySelector('[data-guest-home]');
+            if (homeButton) homeButton.onclick = home;
+        }
+        function home() {
+            if (!data.photos?.enabled) {
+                form();
+                return;
+            }
+            view = 'home';
+            app.innerHTML = banner() + '<section class="card guest-event-home"><h2>Join the celebration</h2></section>';
+            navigation();
         }
         function showPhotos() {
             view = 'photos';
-            guestPhotoForm({app, token, esc, banner, navigation, home: form, isCurrent: current});
+            guestPhotoForm({app, token, esc, banner, navigation, home, isCurrent: current});
         }
         function renderOpen() {
             const status = app.querySelector('[data-guest-open]');
@@ -177,7 +189,7 @@ export function musicUI({api, app, head, esc, date, message}) {
                 }
             };
         }
-        form();
+        home();
         timer = setInterval(refresh, 6000);
     }
 
@@ -190,7 +202,7 @@ export function musicUI({api, app, head, esc, date, message}) {
         const path = 'admin/events/' + id + '/music';
         let data = await api(path);
         if (!current()) return;
-        let previousRows, previousConfig, busy = false, pending, photoController, undo;
+        let previousRows, previousConfig, busy = false, pending, photoController, undo, sortByVotes = false;
         document.body.classList.add('music-performance-mode');
         app.innerHTML = head('DJ JESSE B · LIVE REQUEST DESK', esc(data.event.name), date(data.event.date),
             '<a class="button secondary" href="#event/' + id + '">Event HQ</a>') + `
@@ -200,6 +212,7 @@ export function musicUI({api, app, head, esc, date, message}) {
                     <div class="music-booth-controls">
                         <button type="button" data-pause></button>
                         <button type="button" class="secondary" data-qr>Show guest QR</button>
+                        <button type="button" class="secondary" data-sort-votes aria-pressed="false">Sort incoming by votes</button>
                         <button type="button" class="secondary" data-fullscreen>Full screen</button>
                     </div>
                     <div class="music-undo"><span data-action-feedback role="status"></span>
@@ -265,11 +278,12 @@ export function musicUI({api, app, head, esc, date, message}) {
         }
         function render() {
             renderConfig();
-            const serialized = JSON.stringify([data.requests, data.counts]);
+            const serialized = JSON.stringify([data.requests, data.counts, sortByVotes]);
             if (serialized === previousRows) return;
             previousRows = serialized;
             for (const status of ['Pending', 'Approved', 'Played', 'Denied']) {
                 const rows = data.requests.filter(song => song.status === status);
+                if (status === 'Pending' && sortByVotes) rows.sort((a, b) => Number(b.votes || 0) - Number(a.votes || 0));
                 const panel = find('[data-queue=' + status + ']');
                 const html = rows.map(songCard).join('') || '<p class="music-empty">No ' + (status === 'Pending' ? 'incoming' : status.toLowerCase()) + ' requests.</p>';
                 if (panel.innerHTML !== html) {
@@ -381,6 +395,13 @@ export function musicUI({api, app, head, esc, date, message}) {
                 void mutate(rotate, () => updateSettings('rotate'));
         };
         find('[data-qr]').onclick = () => find('dialog').showModal();
+        const sort = find('[data-sort-votes]');
+        sort.onclick = () => {
+            sortByVotes = !sortByVotes;
+            sort.textContent = sortByVotes ? 'Sort incoming by arrival' : 'Sort incoming by votes';
+            sort.setAttribute('aria-pressed', String(sortByVotes));
+            render();
+        };
         const fullscreen = find('[data-fullscreen]');
         fullscreen.hidden = !booth.requestFullscreen;
         fullscreen.onclick = async () => {

@@ -34,14 +34,13 @@ class DJ_QRCode {
     private static function rsPoly($n) {
         $poly = [1];
         for ($i = 0; $i < $n; $i++) {
-            $next = [1];
             $factor = self::$gfExp[$i];
             $temp = [];
             foreach ($poly as $c) {
                 $temp[] = self::gmult($c, $factor);
             }
-            $temp[] = 0;
-            $padded = array_merge([0], $poly);
+            $temp = array_merge([0], $temp);
+            $padded = array_merge($poly, [0]);
             $poly = [];
             for ($j = 0; $j < count($temp); $j++) {
                 $poly[] = $temp[$j] ^ $padded[$j];
@@ -89,7 +88,7 @@ class DJ_QRCode {
                 return $v;
             }
         }
-        return 10;
+        throw new InvalidArgumentException('The event URL is too long to encode.');
     }
 
     public static function svg($text, $size = 256, $margin = 4) {
@@ -230,14 +229,42 @@ class DJ_QRCode {
         $reserved[$qrSize - 8][8] = true;
         $matrix[$qrSize - 8][8] = 1;
 
-        // 5. Reserve format info
-        for ($i = 0; $i < 9; $i++) {
-            $reserved[8][$i] = true;
-            $reserved[$i][8] = true;
+        // Format information is written least significant bit first.
+        $format = 0x5412; // ECC M, mask 0
+        for ($i = 0; $i < 15; $i++) {
+            if ($i < 6) {
+                $row = $i;
+                $col = 8;
+            } elseif ($i < 9) {
+                $row = min($i + 1, 8);
+                $col = $i === 8 ? 7 : 8;
+            } else {
+                $row = 8;
+                $col = 14 - $i;
+            }
+            $bit = ($format >> $i) & 1;
+            $reserved[$row][$col] = true;
+            $matrix[$row][$col] = $bit;
+            $row = $i < 8 ? 8 : $qrSize - 15 + $i;
+            $col = $i < 8 ? $qrSize - 1 - $i : 8;
+            $reserved[$row][$col] = true;
+            $matrix[$row][$col] = $bit;
         }
-        for ($i = 0; $i < 8; $i++) {
-            $reserved[8][$qrSize - 1 - $i] = true;
-            $reserved[$qrSize - 1 - $i][8] = true;
+
+        if ($v >= 7) {
+            $remainder = $v;
+            for ($i = 0; $i < 12; $i++) {
+                $remainder = ($remainder << 1) ^ ((($remainder >> 11) & 1) * 0x1f25);
+            }
+            $versionBits = ($v << 12) | $remainder;
+            for ($i = 0; $i < 18; $i++) {
+                $row = intdiv($i, 3);
+                $col = $qrSize - 11 + $i % 3;
+                $reserved[$row][$col] = true;
+                $reserved[$col][$row] = true;
+                $matrix[$row][$col] = ($versionBits >> $i) & 1;
+                $matrix[$col][$row] = $matrix[$row][$col];
+            }
         }
 
         // 6. Data Placement
@@ -268,23 +295,7 @@ class DJ_QRCode {
             $right -= 2;
         }
 
-        // 7. Format Information (Mask 0, Level M: bits 101010000010010)
-        $fmtBits = '101010000010010';
-        $fmtCoords = [
-            [8, 0], [8, 1], [8, 2], [8, 3], [8, 4], [8, 5], [8, 7], [8, 8],
-            [7, 8], [5, 8], [4, 8], [3, 8], [2, 8], [1, 8], [0, 8]
-        ];
-        for ($i = 0; $i < 15; $i++) {
-            $val = intval($fmtBits[$i]);
-            $matrix[$fmtCoords[$i][0]][$fmtCoords[$i][1]] = $val;
-            if ($i < 8) {
-                $matrix[$qrSize - 1 - $i][8] = $val;
-            } else {
-                $matrix[8][$qrSize - 15 + $i] = $val;
-            }
-        }
-
-        // Render SVG with clean rounded modules
+        // Render square modules for reliable scanning.
         $fullSize = $qrSize + ($margin * 2);
         $rects = [];
         for ($r = 0; $r < $qrSize; $r++) {
@@ -292,13 +303,13 @@ class DJ_QRCode {
                 if ($matrix[$r][$c] === 1) {
                     $x = $c + $margin;
                     $y = $r + $margin;
-                    $rects[] = "<rect x=\"$x\" y=\"$y\" width=\"1\" height=\"1\" fill=\"#0f172a\" rx=\"0.15\"/>";
+                    $rects[] = "<rect x=\"$x\" y=\"$y\" width=\"1\" height=\"1\" fill=\"#0f172a\"/>";
                 }
             }
         }
 
-        $svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 $fullSize $fullSize\" width=\"$size\" height=\"$size\" shape-rendering=\"geometricPrecision\">\n";
-        $svg .= "  <rect width=\"100%\" height=\"100%\" fill=\"#ffffff\" rx=\"4\"/>\n";
+        $svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 $fullSize $fullSize\" width=\"$size\" height=\"$size\" shape-rendering=\"crispEdges\">\n";
+        $svg .= "  <rect width=\"100%\" height=\"100%\" fill=\"#ffffff\"/>\n";
         $svg .= "  " . implode("\n  ", $rects) . "\n";
         $svg .= "</svg>";
 
