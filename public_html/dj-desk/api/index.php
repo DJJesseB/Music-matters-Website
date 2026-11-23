@@ -229,7 +229,7 @@ if (strpos($path, 'admin/finance') === 0) {
 
 if ($path === 'setup/status' && $method === 'GET') {
     $availableDrivers = PDO::getAvailableDrivers();
-    
+
     $hasAdminUser = false;
     if ($dbConnected) {
         try {
@@ -940,7 +940,8 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/plan$#', $path, $m)) {
         $blocks_table = DJ_Database::get_table_name('music_request_blocks');
         $reqRows = DJ_Database::get_results(
             "SELECT r.*, 
-                    EXISTS(SELECT 1 FROM $blocks_table b WHERE b.event_id = r.event_id AND b.device_hash = r.device_hash AND b.blocked = 1) as requesterBlocked
+                    (SELECT COUNT(*) FROM " . DJ_Database::get_table_name('music_request_votes') . " v WHERE v.request_id = r.id) AS votes,
+                EXISTS(SELECT 1 FROM $blocks_table b WHERE b.event_id = r.event_id AND b.device_hash = r.device_hash AND b.blocked = 1) as requesterBlocked
              FROM $reqs_table r 
              WHERE r.event_id = ? 
              ORDER BY 
@@ -959,7 +960,8 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/plan$#', $path, $m)) {
                 'version' => (int)$r['version'],
                 'createdAt' => $r['created_at'],
                 'updatedAt' => $r['updated_at'],
-                'requesterBlocked' => !empty($r['requesterBlocked'])
+                'requesterBlocked' => !empty($r['requesterBlocked']),
+            'votes' => (int)$r['votes']
             ];
         }
 
@@ -1272,106 +1274,175 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts/([a-f0-9-]+)/down
 // 5. LIVE MUSIC / SONG REQUESTS (PUBLIC & BOOTH)
 // -------------------------------------------------------------
 
+function ensure_music_options(): void {
+    $options = DJ_Database::get_table_name('music_request_options');
+    DJ_Database::pdo()->exec("CREATE TABLE IF NOT EXISTS $options (
+        event_id varchar(64) NOT NULL PRIMARY KEY,
+        show_approved tinyint NOT NULL DEFAULT 0
+    )");
+    $table = DJ_Database::get_table_name('music_request_votes');
+    DJ_Database::pdo()->exec("CREATE TABLE IF NOT EXISTS $table (
+        event_id varchar(64) NOT NULL,
+        request_id varchar(64) NOT NULL,
+        device_hash varchar(64) NOT NULL,
+        submission_key varchar(64) NOT NULL,
+        created_at datetime NOT NULL,
+        PRIMARY KEY (request_id, device_hash),
+        UNIQUE (event_id, submission_key)
+    )");
+}
+
+function music_school_event(array $event): bool {
+    return stripos($event['type'] ?? '', 'school') !== false
+        || in_array(strtolower($event['type'] ?? ''), ['prom', 'homecoming'], true);
+}
+
 if (preg_match('#^music/([a-f0-9]{64})$#', $path, $m)) {
     require_db();
+    ensure_music_options();
     $token = $m[1];
     $settings_table = DJ_Database::get_table_name('music_request_settings');
     $requests_table = DJ_Database::get_table_name('music_requests');
     $blocks_table = DJ_Database::get_table_name('music_request_blocks');
+    $votes_table = DJ_Database::get_table_name('music_request_votes');
+    $options_table = DJ_Database::get_table_name('music_request_options');
 
     $s = DJ_Database::get_row("SELECT * FROM $settings_table WHERE token = ?", [$token]);
-    if (!$s) json_error('Song request link not available or event not found', 404);
-
-    $event = DJ_Database::get_event($s['event_id']);
-    $isOpen = !empty($s['enabled']) && !in_array($event['status'] ?? '', ['Canceled', 'Archived', 'Completed']);
+    $event = $s ? DJ_Database::get_event($s['event_id']) : null;
+    if (!$event) json_error('Song request link not available or event not found', 404);
+    $eventId = $s['event_id'];
+    $inactive = in_array($event['status'] ?? '', ['Canceled', 'Archived', 'Completed'], true);
+    $deviceId = $method === 'GET' ? ($_SERVER['HTTP_X_REQUEST_DEVICE'] ?? '') : ($input['deviceId'] ?? '');
+    $deviceHash = is_string($deviceId) && preg_match('/^[a-zA-Z0-9-]{16,64}$/D', $deviceId)
+        ? hash('sha256', $eventId . ':' . $deviceId) : null;
+    $school = music_school_event($event);
+    $disclaimer = 'DJ Jesse B chooses which requests fit the event. Requests are not guaranteed.'
+        . ($school ? ' Clean edits only.' : '');
 
     if ($method === 'GET') {
-        json_response([
-            'event' => [
-                'name' => $event['name'],
-                'date' => $event['date'],
-                'type' => $event['type']
-            ],
-            'open' => $isOpen,
-            'tipLink' => $config['brand']['tip_link'] ?? '',
-            'disclaimer' => 'Every request helps shape the night! Requests aren’t guaranteed. The DJ will choose songs that fit the event and vibe.'
-        ]);
-    } elseif ($method === 'POST') {
-        if (!$isOpen) json_error('Song requests are paused for this event.', 423);
-
-        $title = trim((string)($input['title'] ?? ''));
-        $artist = trim((string)($input['artist'] ?? ''));
-        $key = trim((string)($input['key'] ?? ''));
-        $deviceId = trim((string)($input['deviceId'] ?? ''));
-
-        if (!$title || !$artist) {
-            json_error('Enter a song title and artist', 400);
-        }
-
-        $deviceHash = hash('sha256', $s['event_id'] . ':' . $deviceId);
-
-        // Check if requester is blocked
-        $isBlocked = DJ_Database::get_var(
-            "SELECT 1 FROM $blocks_table WHERE event_id = ? AND device_hash = ? AND blocked = 1",
-            [$s['event_id'], $deviceHash]
-        );
-        if ($isBlocked) {
-            json_error('Requests from this browser have been disabled for this event.', 403);
-        }
-
-        // Submission cooldown
-        $cooldown = (int)($config['security']['rate_limit_seconds'] ?? 15);
-        if ($cooldown < 1) $cooldown = 15;
-        $recent = DJ_Database::get_var(
-            "SELECT created_at FROM $requests_table WHERE event_id = ? AND device_hash = ? ORDER BY created_at DESC LIMIT 1",
-            [$s['event_id'], $deviceHash]
-        );
-        if ($recent && (time() - strtotime($recent)) < $cooldown) {
-            $left = $cooldown - (time() - strtotime($recent));
-            json_error(sprintf('Please wait %d seconds before sending another song.', max(1, $left)), 429);
-        }
-
-        // Hourly limit
-        $hourlyMax = (int)($config['security']['max_requests_hour'] ?? 30);
-        if ($hourlyMax > 0) {
-            $hourAgo = gmdate('Y-m-d H:i:s', time() - 3600);
-            $hourlyCount = DJ_Database::get_var(
-                "SELECT COUNT(*) FROM $requests_table WHERE event_id = ? AND device_hash = ? AND created_at >= ?",
-                [$s['event_id'], $deviceHash, $hourAgo]
+        $mine = $deviceHash ? DJ_Database::get_results(
+            "SELECT r.title, r.artist, r.status FROM $requests_table r
+             WHERE r.event_id = ? AND (r.device_hash = ? OR EXISTS
+                (SELECT 1 FROM $votes_table v WHERE v.request_id = r.id AND v.device_hash = ?))
+             ORDER BY r.created_at DESC", [$eventId, $deviceHash, $deviceHash]
+        ) : [];
+        $suggestions = [];
+        if (!$inactive && !empty($s['enabled']) && DJ_Database::get_var("SELECT show_approved FROM $options_table WHERE event_id = ?", [$eventId])) {
+            $suggestions = DJ_Database::get_results(
+                "SELECT r.id, r.title, r.artist, (SELECT COUNT(*) FROM $votes_table v WHERE v.request_id = r.id) AS votes
+                 FROM $requests_table r WHERE r.event_id = ? AND r.status = 'Approved'
+                 ORDER BY votes DESC, r.created_at ASC LIMIT 50", [$eventId]
             );
-            if ((int)$hourlyCount >= $hourlyMax) {
-                json_error('Hourly song request limit reached for this device. Enjoy the party!', 429);
+        }
+        json_response([
+            'suggestions' => $suggestions,
+            'event' => ['name' => $event['name'], 'date' => $event['date'], 'type' => $event['type']],
+            'open' => !$inactive && !empty($s['enabled']),
+            'tipLink' => $config['brand']['tip_link'] ?? '',
+            'disclaimer' => $disclaimer,
+            'mine' => $mine
+        ]);
+    }
+    if ($method !== 'POST') json_error('Method not allowed', 405);
+
+    $title = trim(is_string($input['title'] ?? null) ? $input['title'] : '');
+    $artist = trim(is_string($input['artist'] ?? null) ? $input['artist'] : '');
+    $key = $input['key'] ?? '';
+    $voteFor = is_string($input['voteFor'] ?? null) ? $input['voteFor'] : '';
+    if ($title === '' || $artist === '' || mb_strlen($title) > 160 || mb_strlen($artist) > 160) {
+        json_error('Enter a song title and artist, up to 160 characters each.', 400);
+    }
+    if (!$deviceHash || !is_string($key) || !preg_match('/^[a-zA-Z0-9-]{16,64}$/D', $key)) {
+        json_error('Reload the event link and try again.', 400);
+    }
+
+    $pdo = DJ_Database::pdo();
+    $pdo->beginTransaction();
+    try {
+        // Serialize event writes so paired submissions cannot create two active copies.
+        DJ_Database::query("UPDATE $settings_table SET version = version WHERE event_id = ?", [$eventId]);
+        $current = DJ_Database::get_row("SELECT token, enabled FROM $settings_table WHERE event_id = ?", [$eventId]);
+        $fail = static function(string $message, int $code) use ($pdo) {
+            $pdo->rollBack();
+            json_error($message, $code);
+        };
+        $finish = static function(string $id, bool $consolidated) use ($pdo, $disclaimer) {
+            $pdo->commit();
+            json_response(['ok' => true, 'reference' => $id, 'consolidated' => $consolidated, 'disclaimer' => $disclaimer]);
+        };
+        if (!$current || $current['token'] !== $token) $fail('Scan the latest event QR code.', 404);
+        $existing = DJ_Database::get_var(
+            "SELECT id FROM $requests_table WHERE event_id = ? AND submission_key = ? AND device_hash = ?",
+            [$eventId, $key, $deviceHash]
+        );
+        if ($existing) $finish($existing, false);
+        $existingVote = DJ_Database::get_var(
+            "SELECT request_id FROM $votes_table WHERE event_id = ? AND submission_key = ? AND device_hash = ?",
+            [$eventId, $key, $deviceHash]
+        );
+        if ($existingVote) $finish($existingVote, true);
+        if ($inactive || empty($current['enabled'])) $fail('Song requests are paused for this event.', 423);
+        if (DJ_Database::get_var("SELECT 1 FROM $blocks_table WHERE event_id = ? AND device_hash = ? AND blocked = 1", [$eventId, $deviceHash])) {
+            $fail('Requests from this browser have been disabled for this event.', 403);
+        }
+
+        $normalize = static fn(string $value): string => mb_strtolower(trim(preg_replace('/\\s+/u', ' ', $value)), 'UTF-8');
+        $match = null;
+        $active = DJ_Database::get_results(
+            "SELECT id, title, artist, device_hash, status FROM $requests_table
+             WHERE event_id = ? AND status IN ('Pending', 'Approved') ORDER BY created_at, id", [$eventId]
+        );
+        if ($voteFor && !DJ_Database::get_var("SELECT show_approved FROM $options_table WHERE event_id = ?", [$eventId])) {
+            $fail('Guest voting on approved songs is unavailable.', 409);
+        }
+        foreach ($active as $row) {
+            if ($voteFor && ($row['id'] !== $voteFor || $row['status'] !== 'Approved')) continue;
+            if ($normalize($row['title']) === $normalize($title) && $normalize($row['artist']) === $normalize($artist)) {
+                $match = $row;
+                break;
             }
         }
+        if ($voteFor && !$match) $fail('This song is no longer available to vote on.', 409);
+        if ($match && ($match['device_hash'] === $deviceHash || DJ_Database::get_var(
+            "SELECT 1 FROM $votes_table WHERE request_id = ? AND device_hash = ?", [$match['id'], $deviceHash]
+        ))) $finish($match['id'], true);
 
-        // Deduplication key
-        $existing = DJ_Database::get_row(
-            "SELECT id FROM $requests_table WHERE event_id = ? AND submission_key = ?",
-            [$s['event_id'], $key]
+        $recent = DJ_Database::get_col(
+            "SELECT created_at FROM $requests_table WHERE event_id = ? AND device_hash = ? AND created_at >= ?
+             UNION ALL SELECT created_at FROM $votes_table WHERE event_id = ? AND device_hash = ? AND created_at >= ?",
+            [$eventId, $deviceHash, gmdate('Y-m-d H:i:s', time() - 3600),
+             $eventId, $deviceHash, gmdate('Y-m-d H:i:s', time() - 3600)]
         );
-        if ($existing) {
-            json_response(['ok' => true, 'reference' => $existing['id']]);
+        $cooldown = (int)($config['security']['rate_limit_seconds'] ?? 15);
+        if ($cooldown < 1) $cooldown = 15;
+        if ($recent) {
+            $left = $cooldown - (time() - strtotime(max($recent) . ' UTC'));
+            if ($left > 0) $fail("Please wait $left seconds before sending another song.", 429);
         }
+        $hourlyMax = (int)($config['security']['max_requests_hour'] ?? 30);
+        if ($hourlyMax > 0 && count($recent) >= $hourlyMax) $fail('Hourly song request limit reached for this device.', 429);
 
+        $now = DJ_Database::now();
+        if ($match) {
+            DJ_Database::insert($votes_table, [
+                'event_id' => $eventId, 'request_id' => $match['id'], 'device_hash' => $deviceHash,
+                'submission_key' => $key, 'created_at' => $now
+            ]);
+            $finish($match['id'], true);
+        }
         $reqId = DJ_Database::uuid();
         DJ_Database::insert($requests_table, [
-            'id' => $reqId,
-            'event_id' => $s['event_id'],
-            'submission_key' => $key ?: DJ_Database::uuid(),
-            'title' => $title,
-            'artist' => $artist,
-            'status' => 'Pending',
-            'version' => 1,
-            'created_at' => DJ_Database::now(),
-            'updated_at' => DJ_Database::now(),
-            'device_hash' => $deviceHash
+            'id' => $reqId, 'event_id' => $eventId, 'submission_key' => $key,
+            'title' => $title, 'artist' => $artist, 'status' => 'Pending', 'version' => 1,
+            'created_at' => $now, 'updated_at' => $now, 'device_hash' => $deviceHash
         ]);
-
-        json_response([
-            'ok' => true,
-            'reference' => $reqId,
-            'disclaimer' => 'Your song request is with the DJ!'
-        ]);
+        $finish($reqId, false);
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        if (in_array((string)$error->getCode(), ['23000', 'HY000'], true)) {
+            json_error('The request could not be saved. Please try again.', 409);
+        }
+        throw $error;
     }
 }
 
@@ -1414,29 +1485,49 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music$#', $path, $m)) {
     $requests_table = DJ_Database::get_table_name('music_requests');
     $blocks_table = DJ_Database::get_table_name('music_request_blocks');
 
+    ensure_music_options();
     $s = DJ_Database::get_row("SELECT * FROM $settings_table WHERE event_id = ?", [$id]);
 
+    $options_table = DJ_Database::get_table_name('music_request_options');
+    if (!in_array($method, ['GET', 'POST'], true)) json_error('Method not allowed', 405);
     if ($method === 'POST') {
         $action = $input['action'] ?? '';
-        $token = $s ? $s['token'] : bin2hex(random_bytes(32));
-        if ($action === 'rotate') {
-            $token = bin2hex(random_bytes(32));
+        if (!in_array($action, ['open', 'pause', 'rotate', 'preferences'], true)) json_error('Invalid request setting.', 400);
+        if ($s && (int)($input['version'] ?? 0) !== (int)$s['version']) json_error('Settings changed. Check the latest state and retry.', 409);
+        if ($action === 'open' && in_array($event['status'] ?? '', ['Canceled', 'Archived', 'Completed'], true)) {
+            json_error('This event is no longer accepting requests.', 409);
         }
-        $enabled = ($action === 'open') ? 1 : (($action === 'pause') ? 0 : ($s['enabled'] ?? 1));
-
-        if ($s) {
-            DJ_Database::update($settings_table, [
-                'token' => $token,
-                'enabled' => $enabled,
-                'version' => (int)$s['version'] + 1
-            ], ['event_id' => $id]);
+        if ($action === 'preferences') {
+            if (!$s) json_error('Create the event link first.', 409);
+            $pdo = DJ_Database::pdo();
+            $pdo->beginTransaction();
+            if (!DJ_Database::update($settings_table, ['version' => (int)$s['version'] + 1], ['event_id' => $id, 'version' => $s['version']])) {
+                $pdo->rollBack();
+                json_error('Settings changed. Check the latest state and retry.', 409);
+            }
+            DJ_Database::replace($options_table, ['event_id' => $id, 'show_approved' => !empty($input['showApproved']) ? 1 : 0]);
+            $pdo->commit();
         } else {
-            DJ_Database::insert($settings_table, [
-                'event_id' => $id,
-                'token' => $token,
-                'enabled' => 1,
-                'version' => 1
-            ]);
+            $token = $s ? $s['token'] : bin2hex(random_bytes(32));
+            if ($action === 'rotate') {
+                $token = bin2hex(random_bytes(32));
+            }
+            $enabled = ($action === 'open') ? 1 : (($action === 'pause') ? 0 : ($s['enabled'] ?? 1));
+
+            if ($s) {
+                if (!DJ_Database::update($settings_table, [
+                    'token' => $token,
+                    'enabled' => $enabled,
+                    'version' => (int)$s['version'] + 1
+                ], ['event_id' => $id, 'version' => $s['version']])) json_error('Settings changed. Check the latest state and retry.', 409);
+            } else {
+                DJ_Database::insert($settings_table, [
+                    'event_id' => $id,
+                    'token' => $token,
+                    'enabled' => $enabled,
+                    'version' => 1
+                ]);
+            }
         }
         $s = DJ_Database::get_row("SELECT * FROM $settings_table WHERE event_id = ?", [$id]);
     }
@@ -1453,6 +1544,7 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music$#', $path, $m)) {
     // Get all requests
     $reqRows = DJ_Database::get_results(
         "SELECT r.*, 
+                (SELECT COUNT(*) FROM " . DJ_Database::get_table_name('music_request_votes') . " v WHERE v.request_id = r.id) AS votes,
                 EXISTS(SELECT 1 FROM $blocks_table b WHERE b.event_id = r.event_id AND b.device_hash = r.device_hash AND b.blocked = 1) as requesterBlocked
          FROM $requests_table r 
          WHERE r.event_id = ? 
@@ -1472,7 +1564,8 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music$#', $path, $m)) {
             'version' => (int)$r['version'],
             'createdAt' => $r['created_at'],
             'updatedAt' => $r['updated_at'],
-            'requesterBlocked' => !empty($r['requesterBlocked'])
+            'requesterBlocked' => !empty($r['requesterBlocked']),
+            'votes' => (int)$r['votes']
         ];
     }
 
@@ -1484,8 +1577,9 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music$#', $path, $m)) {
             'type' => $event['type']
         ],
         'config' => [
-            'enabled' => !empty($s['enabled']),
+            'enabled' => !empty($s['enabled']) && !in_array($event['status'] ?? '', ['Canceled', 'Archived', 'Completed'], true),
             'url' => $guestUrl,
+            'showApproved' => (bool)DJ_Database::get_var("SELECT show_approved FROM $options_table WHERE event_id = ?", [$id]),
             'version' => (int)($s['version'] ?? 1)
         ],
         'requests' => $requests,
@@ -1497,6 +1591,8 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
     require_db();
     require_admin();
     $id = $m[1];
+    if ($method !== 'PUT') json_error('Method not allowed', 405);
+    ensure_music_options();
     $requestId = $m[2];
     $requests_table = DJ_Database::get_table_name('music_requests');
     $blocks_table = DJ_Database::get_table_name('music_request_blocks');
@@ -1525,11 +1621,20 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
         ]);
     } elseif (isset($input['status'])) {
         $status = trim((string)$input['status']);
-        DJ_Database::update($requests_table, [
+        if (!in_array($status, ['Pending', 'Approved', 'Played', 'Denied'], true)) json_error('Invalid request status.', 400);
+        if ((int)($input['version'] ?? 0) !== (int)$row['version']) json_error('This song changed. Check the queue and try again.', 409);
+        $pdo = DJ_Database::pdo();
+        $pdo->beginTransaction();
+        DJ_Database::query("UPDATE " . DJ_Database::get_table_name('music_request_settings') . " SET version = version WHERE event_id = ?", [$id]);
+        $changed = DJ_Database::update($requests_table, [
             'status' => $status,
             'version' => (int)$row['version'] + 1,
             'updated_at' => DJ_Database::now()
-        ], ['id' => $requestId]);
+        ], ['id' => $requestId, 'version' => $row['version']]);
+        if (!$changed) {
+            $pdo->rollBack();
+            json_error('This song changed. Check the queue and try again.', 409);
+        }
 
         DJ_Database::insert($history_table, [
             'request_id' => $row['id'],
@@ -1537,6 +1642,7 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
             'actor_id' => $actorId,
             'changed_at' => DJ_Database::now()
         ]);
+        $pdo->commit();
     }
 
     $counts = [
@@ -1548,6 +1654,7 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
 
     $reqRows = DJ_Database::get_results(
         "SELECT r.*, 
+                (SELECT COUNT(*) FROM " . DJ_Database::get_table_name('music_request_votes') . " v WHERE v.request_id = r.id) AS votes,
                 EXISTS(SELECT 1 FROM $blocks_table b WHERE b.event_id = r.event_id AND b.device_hash = r.device_hash AND b.blocked = 1) as requesterBlocked
          FROM $requests_table r 
          WHERE r.event_id = ? 
@@ -1567,7 +1674,8 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
             'version' => (int)$r['version'],
             'createdAt' => $r['created_at'],
             'updatedAt' => $r['updated_at'],
-            'requesterBlocked' => !empty($r['requesterBlocked'])
+            'requesterBlocked' => !empty($r['requesterBlocked']),
+            'votes' => (int)$r['votes']
         ];
     }
 
@@ -1579,6 +1687,8 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
 
 if (preg_match('#^admin/events/([a-f0-9-]+)/music/qr$#', $path, $m)) {
     require_db();
+    require_admin();
+    if ($method !== 'GET') json_error('Method not allowed', 405);
     $id = $m[1];
     $settings_table = DJ_Database::get_table_name('music_request_settings');
     $s = DJ_Database::get_row("SELECT * FROM $settings_table WHERE event_id = ?", [$id]);
@@ -1587,7 +1697,7 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/qr$#', $path, $m)) {
     }
 
     $guestUrl = "{$baseUrl}/#music/{$s['token']}";
-    $svg = DJ_QRCode::svg($guestUrl, 320, 3);
+    $svg = DJ_QRCode::svg($guestUrl, 320, 4);
 
     header('Content-Type: image/svg+xml');
     header('Content-Disposition: inline; filename="event-music-qr.svg"');

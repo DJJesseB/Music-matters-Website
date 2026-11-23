@@ -3,7 +3,7 @@ import {mountFollowups} from './followup-ui.js?v=181';
 import {paymentGuide} from './payment-guide.js?v=221';
 import './lighting-addon.js?v=211';
 import './addon-photo-preview.js?v=205';
-import {musicUI} from './music-ui.js?v=182';
+import {musicUI} from './music-ui.js?v=183';
 import {bookingUI} from './intake-ui.js?v=214';
 import {standardDeposit,depositPolicy,calculateDeposit} from './pricing.js?v=180';
 import {mountPackageEditor} from './package-ui.js?v=220';
@@ -27,7 +27,7 @@ const balance=e=>e.amount-e.paid;
 function message(text,error=false,field){formMessage(text,error,field);}installFormValidation();
 const getScriptDir=()=>{const p=window.location.pathname;return p.substring(0,p.lastIndexOf('/')+1)+'api/';};
 const apiBase=window.djDeskConfig?.apiBase||getScriptDir();
-async function api(path,method='GET',data){const headers={...(data?{'Content-Type':'application/json'}:{}),...(auth.csrf?{'X-CSRF-Token':auth.csrf}:{}),...(window.djDeskConfig?.nonce?{'X-WP-Nonce':window.djDeskConfig.nonce}:{})};let r;try{r=await fetch(apiBase+path,{method,headers,credentials:'same-origin',cache:'no-store',body:data?JSON.stringify(data):undefined});}catch(e){throw Error('Network request failed: '+e.message);}const text=await r.text();let j;try{j=text?JSON.parse(text):{};}catch(e){const clean=text.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();throw Error(clean.length>0&&clean.length<300?clean:`Server returned ${r.status} ${r.statusText||'empty response'}`);}if(!r.ok){if(r.status===401&&!path.startsWith('auth/')){music.stop();auth={user:null};dirty=false;shell();portal.login();}throw Object.assign(Error(j.error||`Request failed (${r.status})`),{field:j.field});}return j;}
+async function api(path,method='GET',data,extraHeaders={}){const headers={...extraHeaders,...(data?{'Content-Type':'application/json'}:{}),...(auth.csrf?{'X-CSRF-Token':auth.csrf}:{}),...(window.djDeskConfig?.nonce?{'X-WP-Nonce':window.djDeskConfig.nonce}:{})};let r;try{r=await fetch(apiBase+path,{method,headers,credentials:'same-origin',cache:'no-store',body:data?JSON.stringify(data):undefined});}catch(e){throw new TypeError('Network request failed: '+e.message);}const text=await r.text();let j;try{j=text?JSON.parse(text):{};}catch(e){const clean=text.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();throw Error(clean.length>0&&clean.length<300?clean:`Server returned ${r.status} ${r.statusText||'empty response'}`);}if(!r.ok){if(r.status===401&&!path.startsWith('auth/')){music.stop();auth={user:null};dirty=false;shell();portal.login();}throw Object.assign(Error(j.error||`Request failed (${r.status})`),{field:j.field,status:r.status});}return j;}
 function head(k,title,description,action=''){return `<div class="eyebrow">${k}</div><div class="heading"><div><h1>${title}</h1><p>${description}</p></div>${action}</div>`;}
 const badge=e=>`<span class="badge ${e.status==='Inquiry'||e.status==='Tentative'?'purple':''}">${esc(e.status)}</span>`;
 const social=socialMediaUI({app,head,esc,message});
