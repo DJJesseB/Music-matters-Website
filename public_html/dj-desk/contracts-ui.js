@@ -1,5 +1,5 @@
 import {mountStripePayments} from './stripe-ui.js?v=181';
-import {paymentGuide} from './payment-guide.js?v=184';
+import {paymentGuide} from './payment-guide.js?v=221';
 import {packageDetails} from './package-ui.js?v=205';
 export async function mountContracts({api,app,event,admin,esc,money,date,message,onSigned}){
  let preparedDeliveries=[];
