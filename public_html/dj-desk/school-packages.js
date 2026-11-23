@@ -29,8 +29,8 @@ export function quoteSchoolPackage(input){
  if(selection.extraHalfHours!==0)fail('School dance coverage is limited to four hours. Contact DJ Jesse B for a custom quote for longer events.');
  const lighting=selection.lighting==='none'?[]:selection.lighting==='advancedUplighting'?['advanced','uplighting']:typeof selection.lighting==='string'?selection.lighting.split('+'):['invalid'];
  if(new Set(lighting).size!==lighting.length||lighting.some(k=>!['uplighting','advanced','premium'].includes(k)))fail('Choose valid lighting upgrades');
- const chargedLighting=lighting;
- if(base.id==='prom'&&lighting.includes('advanced'))fail('Advanced lighting is already included in The Total Prom Experience.');
+ const chargedLighting=base.id==='prom'?lighting.filter(key=>key!=='advanced'):lighting;
+ // Prom includes advanced dance-floor lighting; preserve explicit selections without charging twice.
  if(lighting.includes('advanced')&&lighting.includes('premium'))fail('Premium already includes upgraded dance-floor lighting.');
  for(const key of ['bubbles','haze'])if(typeof selection[key]!=='boolean')fail('Invalid effect selection');
  for(const key of ['bubblesApproval','hazeApproval'])if(!['Pending','Approved','Declined'].includes(selection[key]))fail('Choose a venue approval status');
