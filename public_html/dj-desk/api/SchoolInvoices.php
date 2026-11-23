@@ -60,6 +60,14 @@ function dj_school_invoice_route(string $path, string $method, array $input): vo
     }
 
     if ($path === "admin/events/$eventId/invoices" && $method === 'POST') {
+        $prior = DJ_Database::get_results("SELECT id,status FROM $table WHERE event_id = ? AND status = 'Issued'",[$eventId]);
+        if ($prior) {
+            if (empty($input['replacePrior'])) json_error('An invoice is already issued. Select Replace prior invoice to create a revision.',409);
+            foreach ($prior as $oldInvoice) {
+                $pending = (int)DJ_Database::get_var("SELECT COUNT(*) FROM $checks WHERE invoice_id = ? AND status = 'Received'",[$oldInvoice['id']]);
+                if ($pending) json_error('Resolve received checks before replacing the existing invoice.',409);
+            }
+        }
         $school = trim((string)($input['school']??$event['client']['organization']??''));
         $billTo = trim((string)($input['billTo']??'Accounts Payable'));
         $address = trim((string)($input['billingAddress']??''));
@@ -78,8 +86,6 @@ function dj_school_invoice_route(string $path, string $method, array $input): vo
         $dueDate=$terms==='net15'?gmdate('Y-m-d',strtotime('+15 days')):($terms==='net30'?gmdate('Y-m-d',strtotime('+30 days')):($terms==='custom'?$customDue:$issuedOn));
         $amount=(float)($event['amount']??0);$paid=(float)($event['paid']??0);
         if (!is_finite($amount)||$amount<0||!is_finite($paid)||$paid<0)json_error('The booking has invalid financial amounts.',422);
-        $existing=DJ_Database::get_results("SELECT snapshot FROM $table WHERE event_id = ?",[$eventId]);
-        $cleared=DJ_Database::get_var("SELECT COALESCE(SUM(c.amount),0) FROM $checks c JOIN $table i ON i.id=c.invoice_id WHERE i.event_id = ? AND c.status='Cleared'",[$eventId]);
         // Only the current outstanding event balance can be newly invoiced; previously
         // cleared checks are already represented in the booking's paid amount.
         $outstanding=max(0,round($amount-$paid,2));
@@ -96,6 +102,10 @@ function dj_school_invoice_route(string $path, string $method, array $input): vo
           'discount'=>(float)($event['discount']??0),'contractTotal'=>$amount,
           'alreadyPaid'=>$paid,'amountDue'=>$outstanding,'email'=>$event['client']['email']??''];
         $id=DJ_Database::uuid();
+        foreach ($prior as $priorInvoice) {
+            DJ_Database::update($table,['status'=>'Superseded'],['id'=>$priorInvoice['id'],'status'=>'Issued']);
+            $log($priorInvoice['id'],'superseded','Replaced by '.$number);
+        }
         DJ_Database::insert($table,['id'=>$id,'event_id'=>$eventId,'number'=>$number,
           'revision'=>$revision,'snapshot'=>json_encode($snapshot,JSON_THROW_ON_ERROR),
           'status'=>'Issued','created_by'=>$actor,'issued_at'=>DJ_Database::now()]);
@@ -110,6 +120,10 @@ function dj_school_invoice_route(string $path, string $method, array $input): vo
         $d=DateTimeImmutable::createFromFormat('!Y-m-d',$received);
         if ($number===''||strlen($number)>100||!is_numeric($amount)||(float)$amount<=0||(float)$amount>1000000||abs(round((float)$amount,2)-(float)$amount)>0.00001||!$d||$d->format('Y-m-d')!==$received||$received>gmdate('Y-m-d'))json_error('Enter a valid check number, amount and received date.',422);
         if ($invoice['status']!=='Issued')json_error('This invoice cannot accept new checks.',409);
+        $invoiceSnapshot=json_decode($invoice['snapshot'],true)?:[];
+        $receivedTotal=(float)DJ_Database::get_var("SELECT COALESCE(SUM(amount),0) FROM $checks WHERE invoice_id = ? AND status IN ('Received','Cleared')",[$invoiceId]);
+        if ($receivedTotal+(float)$amount>(float)($invoiceSnapshot['amountDue']??0)+0.009)json_error('The check exceeds the unpaid invoice amount. Verify other checks first.',422);
+
         $id=DJ_Database::uuid();
         DJ_Database::insert($checks,['id'=>$id,'invoice_id'=>$invoiceId,'event_id'=>$eventId,
           'check_number'=>$number,'amount'=>round((float)$amount,2),'received_on'=>$received,
