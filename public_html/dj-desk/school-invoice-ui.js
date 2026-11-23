@@ -42,7 +42,7 @@ export async function mountSchoolInvoices({api,app,event,esc,money,message}){
   for(const invoice of invoices){
    const shell=document.createElement('details');
    shell.className='card';shell.style.margin='12px 0';
-   shell.innerHTML='<summary><strong>'+safe(invoice.number)+'</strong> · '+safe(invoice.snapshot.issuedOn)+' · '+safe(money(Number(invoice.snapshot.amountDue||0)))+' invoiced · '+safe(money(invoice.balance))+' remaining · '+safe(invoice.status)+'</summary>'+
+   shell.innerHTML='<summary><strong>'+safe(invoice.number)+'</strong> · '+safe(invoice.snapshot.issuedOn)+' · '+safe(money(Number(invoice.snapshot.amountDue||0)))+' invoiced · '+safe(money(invoice.balance))+' remaining · '+safe(invoice.status)+' · '+safe(invoice.paymentStatus)+'</summary>'+
     '<div><p>Due date: '+safe(invoice.snapshot.dueDate)+' · PO '+safe(invoice.snapshot.poNumber||'—')+'</p>'+
     '<button type="button" class="button secondary" data-print>Print / Save PDF</button>'+
     '<p><strong>Check tracking</strong> — Received checks are not counted as cleared payments.</p>'+
