@@ -261,6 +261,14 @@ img[data-addon-photo]{cursor:zoom-in}img[data-addon-photo]:focus-visible{outline
 .finance-positive{color:#b6ff35}
 .finance-line{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #374151}
 .finance-remove{cursor:pointer;border:1px solid #58606d;background:transparent;border-radius:6px;color:#f0a5ab;padding:2px 9px;font-size:18px}
+.finance-line>div:first-child{min-width:0;overflow-wrap:anywhere}
+.finance-line-end{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0}
+.finance-actions{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.finance-edit,.finance-cancel{cursor:pointer;border:1px solid #82906e;background:#283127;border-radius:6px;color:#b6ff35;padding:7px 11px;font:inherit;font-size:14px}
+.finance-dialog{width:min(95vw,480px);max-height:90vh;overflow:auto;background:#1d2320;color:#fff;border:1px solid #7e9951;border-radius:14px;padding:20px}
+.finance-dialog::backdrop{background:rgba(0,0,0,.78)}
+.finance-dialog .finance-entry{padding:0;border:0;background:none}
+.finance-cancel{width:100%;margin-top:10px;color:#e2e8f0;background:#303740}
 .finance-subtle{font-size:13px;color:#a6b2c2;margin-top:12px}
 @media(max-width:1100px){.finance-form-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.finance-layout,.finance-form-grid{grid-template-columns:1fr}.finance-line{align-items:center}}
