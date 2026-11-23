@@ -1038,6 +1038,10 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/access$#', $path, $m)) {
     }
 }
 
+// Paper contract evidence is admin-only and stored in the database.
+require_once __DIR__ . '/PaperContracts.php';
+dj_paper_contract_route($path, $method, $input);
+
 // -------------------------------------------------------------
 // 4. CONTRACTS & SIGNATURES
 // -------------------------------------------------------------
