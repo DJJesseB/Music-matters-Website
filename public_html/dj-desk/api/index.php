@@ -190,7 +190,9 @@ if (strpos($path, 'admin/finance') === 0) {
     if ($path === 'admin/finance' && $method === 'GET') {
         json_response(DJ_Database::get_results("SELECT * FROM $ledger ORDER BY item_date DESC, created_at DESC"));
     }
-    if ($path === 'admin/finance' && $method === 'POST') {
+    $editingFinance = preg_match('#^admin/finance/([a-f0-9-]+)$#', $path, $financeMatch) && $method === 'PUT';
+    if (($path === 'admin/finance' && $method === 'POST') || $editingFinance) {
+        if ($editingFinance && !DJ_Database::get_row("SELECT id FROM $ledger WHERE id = ?", [$financeMatch[1]])) json_error('Entry not found', 404);
         $kind = (string)($input['kind'] ?? '');
         $frequency = (string)($input['frequency'] ?? 'once');
         $title = trim((string)($input['title'] ?? ''));
@@ -205,8 +207,13 @@ if (strpos($path, 'admin/finance') === 0) {
         if (!$validDate($dateValue) || ($endDate !== '' && (!$validDate($endDate) || $endDate < $dateValue))) json_error('Enter a valid date range', 400, 'item_date');
         $status = (string)($input['status'] ?? '');
         if ($kind === 'wish' && !in_array($status, ['Considering','Saving','Ready to buy','Purchased'], true)) json_error('Invalid wish-list status');
+        $data = ['kind'=>$kind,'title'=>$title,'amount'=>round((float)$amount,2),'category'=>substr(trim((string)($input['category'] ?? '')),0,100),'item_date'=>$dateValue,'frequency'=>$frequency,'end_date'=>$endDate ?: null,'status'=>$kind === 'wish' ? $status : '', 'notes'=>substr(trim((string)($input['notes'] ?? '')),0,2000)];
+        if ($editingFinance) {
+            DJ_Database::update($ledger, $data, ['id'=>$financeMatch[1]]);
+            json_response(['id'=>$financeMatch[1], 'ok'=>true]);
+        }
         $id = DJ_Database::uuid();
-        DJ_Database::insert($ledger, ['id'=>$id,'kind'=>$kind,'title'=>$title,'amount'=>round((float)$amount,2),'category'=>substr(trim((string)($input['category'] ?? '')),0,100),'item_date'=>$dateValue,'frequency'=>$frequency,'end_date'=>$endDate ?: null,'status'=>$kind === 'wish' ? $status : '', 'notes'=>substr(trim((string)($input['notes'] ?? '')),0,2000),'created_at'=>DJ_Database::now()]);
+        DJ_Database::insert($ledger, ['id'=>$id] + $data + ['created_at'=>DJ_Database::now()]);
         json_response(['id'=>$id], 201);
     }
     if (preg_match('#^admin/finance/([a-f0-9-]+)$#', $path, $financeMatch) && $method === 'DELETE') {
