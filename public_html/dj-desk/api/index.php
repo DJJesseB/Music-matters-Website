@@ -1102,6 +1102,8 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
         $terms = trim((string)($input['terms'] ?? ''));
         $signerEmail = strtolower(trim((string)($input['email'] ?? ($event['client']['email'] ?? ''))));
         $signerName = trim((string)($input['signerName'] ?? ($event['client']['name'] ?? '')));
+        $deliveryMethod = (string)($input['deliveryMethod'] ?? 'electronic');
+        if (!in_array($deliveryMethod, ['electronic','paper'], true)) json_error('Choose an available signing method.', 422);
 
         $lastRev = DJ_Database::get_var("SELECT MAX(revision) FROM $contracts_table WHERE event_id = ?", [$id]);
         $newRev = (int)$lastRev + 1;
@@ -1109,6 +1111,7 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
         $snapshot = [
             'signerName' => $signerName,
             'signerEmail' => $signerEmail,
+            'deliveryMethod' => $deliveryMethod,
             'event' => [
                 'name' => $event['name'],
                 'type' => $event['type'],
@@ -1154,8 +1157,10 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
             'created_at' => DJ_Database::now()
         ]);
 
-        // Automatically prepare invitations for signer
+        // Automatically prepare invitations for signer only when requested.
         $deliveries = [];
+        $emailSent = false;
+        if ($deliveryMethod === 'electronic') {
         $token = DJ_Auth::create_invitation($id, $signerEmail, 'contract', $signerName);
         $deliveries[] = [
             'email' => $signerEmail,
@@ -1173,6 +1178,8 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
             $mailRes = DJ_Mailer::sendClientInvitation($signerEmail, $signerName ?: 'Valued Client', $evName, $evDate, $token, 'contract');
             $emailSent = !empty($mailRes['ok']);
         }
+
+        } // Paper delivery creates no electronic invitation or email.
 
         json_response([
             'id'         => $contractId,
@@ -1198,6 +1205,7 @@ if (preg_match('#^portal/events/([a-f0-9-]+)/contracts/([a-f0-9-]+)/sign$#', $pa
 
     $session = current_session();
     $signature = [
+        'method' => 'electronic',
         'name' => trim((string)($input['name'] ?? '')),
         'email' => $session['user']['email'] ?? '',
         'signedAt' => DJ_Database::now(),
