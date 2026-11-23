@@ -1,0 +1,75 @@
+/**
+ * School invoice & check management for DJ Desk admin. Printed invoices are
+ * generated from immutable server-issued snapshots (never the live editable form).
+ */
+export async function mountSchoolInvoices({api,app,event,esc,money,message}){
+ if(event.type!=='School dance')return;
+ const root=document.createElement('section');root.className='card';root.id='schoolInvoices';
+ root.innerHTML='<h2>School invoices & check payments</h2><p>Issue a printable invoice for the school business office. An invoice may be issued before the contract is signed. Checks do not count as paid until cleared.</p><div data-school-invoices>Loading invoices…</div>';
+ const anchor=app.querySelector('#contractWorkspace')||app.querySelector('[data-portal-anchor],#clientPlan');
+ anchor?.before(root);
+ const endpoint='admin/events/'+event.id+'/invoices';
+ const info=root.querySelector('[data-school-invoices]');
+ const validDate=value=>/^(19|20)\d{2}-\d{2}-\d{2}$/.test(value);
+ const safe=value=>esc(value??'');
+ const field=(label,name,value='',type='text',extra='')=>'<label>'+safe(label)+'<input name="'+name+'" type="'+type+'" value="'+safe(value)+'" '+extra+'></label>';
+ const note=(label,name,value='')=>'<label>'+safe(label)+'<textarea name="'+name+'">'+safe(value)+'</textarea></label>';
+
+ function print(invoice){
+  const s=invoice.snapshot||{},rows=s.lineItems||[];
+  const cell=(value)=>safe(value);
+  const tds=rows.map(item=>'<tr><td>'+cell(item.name)+(item.description?'<small> · '+cell(item.description)+'</small>':'')+'</td><td class="right">'+cell(item.quantity||1)+'</td><td class="right">'+cell(money(Number(item.total||0)))+'</td></tr>').join('');
+  const body='<!doctype html><html lang="en"><head><meta charset="utf-8"><title>'+cell(invoice.number)+'</title><style>@page{size:letter;margin:.7in}body{font:11pt/1.48 Arial,sans-serif;max-width:850px;margin:0 auto;color:#161616}h1{font-size:24pt;margin:0}h2{font-size:12pt;margin:18px 0 6px}p{margin:5px 0}header{display:flex;justify-content:space-between;align-items:start;border-bottom:2px solid #222;padding-bottom:15px}table{width:100%;border-collapse:collapse;margin-top:12px}td,th{padding:8px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}.right{text-align:right}th{background:#eee}.total{font-size:16pt;font-weight:bold;text-align:right}.instructions{white-space:pre-wrap}.small{font-size:9pt;color:#444}.actions{padding:12px;background:#eee;margin-bottom:15px}button{padding:10px 14px}@media print{.actions{display:none}thead{display:table-header-group}tr{break-inside:avoid}}</style></head><body><div class="actions"><button onclick="window.print()">Print / Save as PDF</button> <button onclick="window.close()">Close</button></div><header><div><h1>DJ JESSE B</h1><p>Professional DJ & MC Services</p><p>music-matters.me</p></div><div style="text-align:right"><h1>INVOICE</h1><strong>'+cell(invoice.number)+'</strong><p>Issued: '+cell(s.issuedOn)+'</p><p>Due: '+cell(s.dueDate)+'</p></div></header><h2>Bill To</h2><p><strong>'+cell(s.school)+'</strong><br>'+cell(s.billTo)+'<br><span class="instructions">'+cell(s.billingAddress)+'</span></p><p>PO Number: '+cell(s.poNumber||'Not provided')+'</p><h2>Event</h2><p>'+cell(s.eventName)+' · '+cell(s.eventDate)+' · '+cell(s.eventVenue||'Venue to be confirmed')+'</p><table><thead><tr><th>Service or equipment</th><th class="right">Qty</th><th class="right">Amount</th></tr></thead><tbody>'+tds+'</tbody></table><p style="text-align:right">Subtotal: '+cell(money(Number(s.subtotal||0)))+'<br>Discount: −'+cell(money(Number(s.discount||0)))+'<br>Contract total: '+cell(money(Number(s.contractTotal||0)))+'<br>Previously paid: −'+cell(money(Number(s.alreadyPaid||0)))+'</p><p class="total">AMOUNT INVOICED: '+cell(money(Number(s.amountDue||0)))+'</p><h2>Payment terms</h2><p>'+cell(({due:'Due on receipt',net15:'Net 15',net30:'Net 30',custom:'Custom due date'})[s.terms]||s.terms)+' · Due '+cell(s.dueDate)+'</p><h2>Pay by check</h2><p>Make check payable to: <strong>'+cell(s.payee)+'</strong></p><p class="instructions">'+cell(s.mailingAddress)+'</p><p>Reference invoice '+cell(invoice.number)+' and event date '+cell(s.eventDate)+' with payment.</p>'+(s.notes?'<h2>Notes</h2><p class="instructions">'+cell(s.notes)+'</p>':'')+'<p class="small">Please contact DJ Jesse B with questions regarding this invoice. Receipt of a check does not confirm cleared payment.</p></body></html>';
+  const popup=window.open('','_blank');if(!popup)throw Error('Allow pop-ups to print this invoice.');popup.document.open();popup.document.write(body);popup.document.close();popup.focus();
+ }
+
+ async function load(){
+  const invoices=await api(endpoint);if(!info.isConnected)return;
+  info.innerHTML='<details open><summary>Create invoice for school business office</summary><form data-invoice-create><div class="grid">'+
+   field('School / district name *','school',event.client?.organization||'', 'text','required maxlength="255"')+
+   field('Bill to / Accounts Payable','billTo','Accounts Payable','text','maxlength="255"')+
+   note('School billing address','billingAddress',event.address||'')+
+   field('Purchase order number (optional)','poNumber','', 'text','maxlength="100"')+
+   '<label>Payment terms<select name="terms"><option value="due">Due on receipt</option><option value="net15">Net 15</option><option value="net30">Net 30</option><option value="custom">Custom due date</option></select></label>'+
+   field('Custom due date','dueDate','', 'date')+
+   field('Make check payable to *','payee','', 'text','required maxlength="255"')+
+   note('Check mailing / delivery instructions *','mailingAddress','')+
+   note('Additional invoice notes','notes','')+
+   '</div><button type="submit" class="button">Issue school invoice</button><p class="hint">The invoice freezes the current event pricing. Later booking changes require a new invoice version. Check payee and mailing instructions are required.</p><small data-invoice-error role="status"></small></form></details>'+
+   '<h3>Invoice history</h3><div data-invoice-history></div>';
+  const list=info.querySelector('[data-invoice-history]');
+  if(!invoices.length)list.innerHTML='<p>No invoices have been issued for this event yet.</p>';
+  for(const invoice of invoices){
+   const shell=document.createElement('details');
+   shell.className='card';shell.style.margin='12px 0';
+   shell.innerHTML='<summary><strong>'+safe(invoice.number)+'</strong> · '+safe(invoice.snapshot.issuedOn)+' · '+safe(money(Number(invoice.snapshot.amountDue||0)))+' invoiced · '+safe(money(invoice.balance))+' remaining</summary>'+
+    '<div><p>Due date: '+safe(invoice.snapshot.dueDate)+' · PO '+safe(invoice.snapshot.poNumber||'—')+'</p>'+
+    '<button type="button" class="button secondary" data-print>Print / Save PDF</button>'+
+    '<p><strong>Check tracking</strong> — Received checks are not counted as cleared payments.</p>'+
+    '<form data-check-create class="grid">'+field('Check number','checkNumber','','text','required maxlength="100"')+
+    field('Check amount','amount','','number','required min="0.01" step="0.01"')+
+    field('Date received','receivedOn',new Date().toISOString().slice(0,10),'date','required')+
+    '<button type="submit" class="button secondary">Record check received</button><small data-check-error role="status"></small></form>'+
+    '<div data-check-list></div><details><summary>Invoice audit history</summary><ul>'+invoice.history.map(h=>'<li>'+safe(h.created_at)+' · '+safe(h.action)+' · '+safe(h.details)+'</li>').join('')+'</ul></details></div>';
+   shell.querySelector('[data-print]').onclick=()=>{try{print(invoice);}catch(error){message(error.message,true);}};
+   shell.querySelector('[data-check-create]').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('button');b.disabled=true;try{await api(endpoint+'/'+invoice.id+'/checks','POST',{checkNumber:f.elements.checkNumber.value,amount:Number(f.elements.amount.value),receivedOn:f.elements.receivedOn.value});message('Check received and recorded. It will not count as paid until cleared.');await load();}catch(error){f.querySelector('[data-check-error]').textContent=error.message;message(error.message,true);b.disabled=false;}};
+   const checkList=shell.querySelector('[data-check-list]');
+   for(const check of invoice.checks){
+    const row=document.createElement('div');row.className='event';
+    row.innerHTML='<span>Check #'+safe(check.check_number)+' · '+safe(money(Number(check.amount)))+' · '+safe(check.received_on)+' · <strong>'+safe(check.status)+'</strong></span>';
+    if(check.status==='Received'){
+     for(const [status,label] of [['Cleared','Mark cleared'],['Returned','Mark returned']]){
+      const button=document.createElement('button');button.type='button';button.className='button secondary';button.textContent=label;
+      button.onclick=async()=>{if(!confirm('Confirm check #'+check.check_number+' is '+status.toLowerCase()+'?'))return;button.disabled=true;try{await api(endpoint+'/'+invoice.id+'/checks/'+check.id,'PUT',{status});message('Check marked '+status.toLowerCase()+'.');await load();}catch(error){message(error.message,true);button.disabled=false;}};
+      row.append(button);
+     }
+    }
+    checkList.append(row);
+   }
+   list.append(shell);
+  }
+  const f=info.querySelector('[data-invoice-create]');
+  f.onsubmit=async e=>{e.preventDefault();const button=f.querySelector('button[type=submit]');button.disabled=true;const data=Object.fromEntries(new FormData(f));try{if(!data.school.trim()||!data.payee.trim()||!data.mailingAddress.trim())throw Error('School, check payee, and delivery instructions are required.');const result=await api(endpoint,'POST',data);message('School invoice '+result.number+' issued. Print or save the invoice from its history entry.');await load();}catch(error){f.querySelector('[data-invoice-error]').textContent=error.message;message(error.message,true);button.disabled=false;}};
+ }
+ try{await load();}catch(error){info.textContent='Unable to open school invoices: '+error.message;message(error.message,true);}
+}
