@@ -1,7 +1,7 @@
 import {additionalTimeControl,setAdditionalTimeAvailable,limitSchoolDancing} from './additional-time.js?v=205';
 import {foamSticksControl} from './foam-sticks.js?v=205';
 import {serviceControls,readServices,syncTechnician} from './service-controls.js?v=211';
-import {schoolPackages,schoolAddons,quoteSchoolPackage} from './school-packages.js?v=211';
+import {schoolPackages,schoolAddons,quoteSchoolPackage} from './school-packages.js?v=220';
 import {discountedTotal} from './pricing.js?v=180';
 import {weddingPackages,weddingAddons,ceremonyCondition,quoteWeddingPackage} from './wedding-packages.js?v=180';
 export function syncWeddingAddons(root,id){const restricted=id==='essentials';for(const key of ['bubbles','haze','glow','foamSticks','extraTopPairs','extraSubwoofers']){const control=root.querySelector('[name="'+key+'"],[data-package-pick="'+key+'"]');if(!control)continue;if(key==='extraTopPairs'&&control.hasAttribute('data-package-pick'))continue;const label=control.closest('label');const wrapper=control.closest('[data-foam-sticks]')||(label.parentElement.querySelector('[data-package-pick="'+key+'Approval"]')?label.parentElement:label);wrapper.hidden=restricted;if(restricted){if(control.type==='checkbox')control.checked=false;else control.value='0';}}}
