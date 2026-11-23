@@ -55,6 +55,7 @@ function dj_school_invoice_route(string $path, string $method, array $input): vo
             $record['clearedTotal']=round(array_reduce($record['checks'],static fn($sum,$check)=>$sum+($check['status']==='Cleared'?(float)$check['amount']:0),0),2);
             $record['receivedTotal']=round(array_reduce($record['checks'],static fn($sum,$check)=>$sum+($check['status']==='Received'?(float)$check['amount']:0),0),2);
             $record['balance']=max(0,round((float)($record['snapshot']['amountDue']??0)-$record['clearedTotal'],2));
+            $record['paymentStatus']=$record['balance']<=0?'Paid':($record['clearedTotal']>0?'Partially paid':($record['receivedTotal']>0?'Check received — uncleared':'Unpaid'));
         }unset($record);
         json_response($invoice?($records[0]??[]):$records);
     }
