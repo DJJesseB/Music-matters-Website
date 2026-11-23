@@ -73,6 +73,12 @@ export function musicUI({api, app, head, esc, date, message}) {
             const submit = app.querySelector('#guestSong button[type=submit]');
             if (status) status.textContent = data.open ? '' : 'Song requests are paused.';
             if (submit) submit.disabled = !data.open || submit.dataset.sending === 'yes';
+            const search = app.querySelector('#guestCatalog');
+            if (search) {
+                const button = search.querySelector('button[type=submit]');
+                button.disabled = !data.open || button.dataset.searching === 'yes';
+                search.querySelector('[data-catalog-results]').hidden = !data.open;
+            }
         }
         function renderHistory() {
             const list = app.querySelector('[data-guest-history]');
@@ -133,22 +139,83 @@ export function musicUI({api, app, head, esc, date, message}) {
                 const song = songs[Number(button.dataset.suggestion)];
                 form.elements.title.value = song.title;
                 form.elements.artist.value = song.artist;
+                form.querySelector('[data-catalog-selected]').textContent = '';
                 form.dataset.voteFor = song.id;
                 form.requestSubmit();
                 delete form.dataset.voteFor;
             };
         }
+        function mountCatalog(requestForm) {
+            const searchForm = app.querySelector('#guestCatalog');
+            const button = searchForm.querySelector('button[type=submit]');
+            const results = searchForm.querySelector('[data-catalog-results]');
+            const status = searchForm.querySelector('[data-catalog-status]');
+            const selected = requestForm.querySelector('[data-catalog-selected]');
+            const rating = {cleaned: 'Clean edit', notExplicit: 'Not explicit', explicit: 'Explicit'};
+            const label = track => rating[track.explicitness] || 'Rating unavailable';
+
+            requestForm.addEventListener('input', () => { selected.textContent = ''; });
+            searchForm.onsubmit = async event => {
+                event.preventDefault();
+                if (button.disabled) return;
+                const term = searchForm.elements.term.value.trim();
+                if (term.length < 3) {
+                    status.textContent = 'Enter at least three characters to search.';
+                    return;
+                }
+
+                button.dataset.searching = 'yes';
+                renderOpen();
+                results.replaceChildren();
+                status.textContent = 'Searching iTunes…';
+                try {
+                    const {tracks} = await api(path + '/catalog', 'POST', {term});
+                    if (!current() || !searchForm.isConnected) return;
+                    status.textContent = tracks.length ? 'Select a recording to fill in your request.'
+                        : 'No matching songs. Try another search or enter your request below.';
+                    for (const track of tracks) {
+                        const option = document.createElement('button');
+                        option.type = 'button';
+                        option.className = 'secondary';
+                        option.textContent = [track.title, track.artist, track.album, label(track)].filter(Boolean).join(' · ');
+                        option.onclick = () => {
+                            if (!data.open) return;
+                            requestForm.elements.title.value = track.title;
+                            requestForm.elements.artist.value = track.artist;
+                            selected.textContent = 'iTunes rating: ' + label(track) + '.';
+                            renderSuggestions();
+                            requestForm.querySelector('button[type=submit]').focus();
+                        };
+                        results.append(option);
+                    }
+                } catch (error) {
+                    if (!current() || !searchForm.isConnected) return;
+                    status.textContent = error.status === 429
+                        ? 'iTunes search is busy. Try again in a minute or enter the song below.'
+                        : 'iTunes search is unavailable. You can enter the song below.';
+                    if (error.status === 423) data.open = false;
+                } finally {
+                    delete button.dataset.searching;
+                    if (current() && searchForm.isConnected) renderOpen();
+                }
+            };
+        }
+
         function form() {
             view = 'form';
             app.innerHTML = banner() + '<section class="card song-guest-card"><h2>What would you love to hear?</h2>'
                 + '<p data-guest-open role="status"></p><p data-guest-connection role="status"></p>'
-                + '<form id="guestSong"><label>Song title<input name="title" required maxlength="160" enterkeyhint="next" placeholder="Search approved songs or enter a title"></label><div class="music-suggestions" data-suggestions></div>'
+                + '<form id="guestCatalog"><label>Find a song on iTunes<input name="term" type="search" required minlength="3" maxlength="120" enterkeyhint="search" placeholder="Song title or artist"></label>'
+                + '<button type="submit" class="secondary">Search iTunes</button><p data-catalog-status role="status"></p>'
+                + '<div class="music-suggestions" data-catalog-results></div></form>'
+                + '<form id="guestSong"><h3>Your request</h3><label>Song title<input name="title" required maxlength="160" enterkeyhint="next" placeholder="Enter a song title"></label><div class="music-suggestions" data-suggestions></div>'
                 + '<label>Artist<input name="artist" required maxlength="160" enterkeyhint="done" placeholder="Enter the artist"></label>'
-                + '<button type="submit">Send request</button><p data-song-error role="alert"></p></form>'
+                + '<p data-catalog-selected role="status"></p><button type="submit">Send request</button><p data-song-error role="alert"></p></form>'
                 + '<p class="music-disclaimer">' + esc(data.disclaimer) + '</p></section>';
             navigation();
             renderOpen();
             const formElement = app.querySelector('#guestSong');
+            mountCatalog(formElement);
             const button = formElement.querySelector('button[type=submit]');
             formElement.addEventListener('input', renderSuggestions);
             renderSuggestions();
