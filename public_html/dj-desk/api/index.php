@@ -1297,29 +1297,6 @@ function music_school_event(array $event): bool {
         || in_array(strtolower($event['type'] ?? ''), ['prom', 'homecoming'], true);
 }
 
-if (preg_match('#^music/([a-f0-9]{64})/catalog$#', $path, $m)) {
-    require_db();
-    if ($method !== 'POST') json_error('Method not allowed', 405);
-    $settings = DJ_Database::get_table_name('music_request_settings');
-    $state = DJ_Database::get_row("SELECT event_id, enabled FROM $settings WHERE token = ?", [$m[1]]);
-    $event = $state ? DJ_Database::get_event($state['event_id']) : null;
-    if (!$event) json_error('Song request link not available or event not found', 404);
-    if (empty($state['enabled']) || in_array($event['status'] ?? '', ['Canceled', 'Archived', 'Completed'], true)) {
-        json_error('Song requests are paused for this event.', 423);
-    }
-
-    require_once __DIR__ . '/iTunesCatalog.php';
-    try {
-        $term = is_string($input['term'] ?? null) ? $input['term'] : '';
-        json_response(['tracks' => DJ_iTunesCatalog::search($term, music_school_event($event))]);
-    } catch (InvalidArgumentException $error) {
-        json_error($error->getMessage(), 400);
-    } catch (Throwable $error) {
-        if ($error instanceof RuntimeException && $error->getCode() === 429) json_error($error->getMessage(), 429);
-        json_error('Catalog search is temporarily unavailable. You can still enter the song manually.', 503);
-    }
-}
-
 if (preg_match('#^music/([a-f0-9]{64})$#', $path, $m)) {
     require_db();
     ensure_music_options();
@@ -1359,6 +1336,7 @@ if (preg_match('#^music/([a-f0-9]{64})$#', $path, $m)) {
         }
         json_response([
             'suggestions' => $suggestions,
+            'school' => $school,
             'event' => ['name' => $event['name'], 'date' => $event['date'], 'type' => $event['type']],
             'open' => !$inactive && !empty($s['enabled']),
             'tipLink' => $config['brand']['tip_link'] ?? '',
