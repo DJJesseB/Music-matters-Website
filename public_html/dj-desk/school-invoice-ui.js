@@ -35,18 +35,18 @@ export async function mountSchoolInvoices({api,app,event,esc,money,message}){
    field('Make check payable to *','payee','', 'text','required maxlength="255"')+
    note('Check mailing / delivery instructions *','mailingAddress','')+
    note('Additional invoice notes','notes','')+
-   '</div><button type="submit" class="button">Issue school invoice</button><p class="hint">The invoice freezes the current event pricing. Later booking changes require a new invoice version. Check payee and mailing instructions are required.</p><small data-invoice-error role="status"></small></form></details>'+
+   '</div>'+(invoices.some(i=>i.status==='Issued')?'<label class="check-row"><input name="replacePrior" type="checkbox" value="1" required><span>Replace the existing issued invoice with a new revision (all received checks must be resolved)</span></label>':'')+'<button type="submit" class="button">Issue school invoice</button><p class="hint">The invoice freezes the current event pricing. Later booking changes require a new invoice version. Check payee and mailing instructions are required.</p><small data-invoice-error role="status"></small></form></details>'+
    '<h3>Invoice history</h3><div data-invoice-history></div>';
   const list=info.querySelector('[data-invoice-history]');
   if(!invoices.length)list.innerHTML='<p>No invoices have been issued for this event yet.</p>';
   for(const invoice of invoices){
    const shell=document.createElement('details');
    shell.className='card';shell.style.margin='12px 0';
-   shell.innerHTML='<summary><strong>'+safe(invoice.number)+'</strong> · '+safe(invoice.snapshot.issuedOn)+' · '+safe(money(Number(invoice.snapshot.amountDue||0)))+' invoiced · '+safe(money(invoice.balance))+' remaining</summary>'+
+   shell.innerHTML='<summary><strong>'+safe(invoice.number)+'</strong> · '+safe(invoice.snapshot.issuedOn)+' · '+safe(money(Number(invoice.snapshot.amountDue||0)))+' invoiced · '+safe(money(invoice.balance))+' remaining · '+safe(invoice.status)+'</summary>'+
     '<div><p>Due date: '+safe(invoice.snapshot.dueDate)+' · PO '+safe(invoice.snapshot.poNumber||'—')+'</p>'+
     '<button type="button" class="button secondary" data-print>Print / Save PDF</button>'+
     '<p><strong>Check tracking</strong> — Received checks are not counted as cleared payments.</p>'+
-    '<form data-check-create class="grid">'+field('Check number','checkNumber','','text','required maxlength="100"')+
+    '<form data-check-create class="grid" '+(invoice.status!=='Issued'?'hidden':'')+'>'+field('Check number','checkNumber','','text','required maxlength="100"')+
     field('Check amount','amount','','number','required min="0.01" step="0.01"')+
     field('Date received','receivedOn',new Date().toISOString().slice(0,10),'date','required')+
     '<button type="submit" class="button secondary">Record check received</button><small data-check-error role="status"></small></form>'+
