@@ -1,6 +1,7 @@
 import {mountStripePayments} from './stripe-ui.js?v=181';
 import {paymentGuide} from './payment-guide.js?v=221';
 import {packageDetails} from './package-ui.js?v=205';
+import {mountPaperContract} from './paper-contract-ui.js?v=224';
 function printContractCopy(contract,esc,money){
  const snapshot=contract.snapshot||{}, event=snapshot.event||{}, financials=snapshot.financials||{};
  const heading=value=>esc(value??'');
@@ -31,6 +32,11 @@ export async function mountContracts({api,app,event,admin,esc,money,date,message
   card.querySelectorAll('[data-void]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await api(prefix+'/'+button.dataset.void+'/void','POST',{});await render();message('Unsigned contract voided.');}catch(err){message(err.message,true,err.field);button.disabled=false;}});
   }
   if(admin)card.querySelectorAll('[data-print-contract]').forEach(button=>button.onclick=()=>{const selected=data.contracts.find(c=>c.id===button.dataset.printContract);if(!selected)return message('Contract not found for printing.',true);try{printContractCopy(selected,esc,money);}catch(error){message(error.message,true);}});
+  if(admin)for(const contract of data.contracts){
+    const print=card.querySelector('[data-print-contract="'+contract.id+'"]');
+    const container=print?.closest('.contract-document');
+    if(container)await mountPaperContract({api,contract,prefix,container,message,esc,refresh:render});
+  }
   const signing=card.querySelector('#signContract');if(signing)signing.onsubmit=async ev=>{ev.preventDefault();const form=ev.currentTarget,button=form.querySelector('button');button.disabled=true;const values=new FormData(form);try{await api(prefix+'/'+latest.id+'/sign','POST',{hash:latest.hash,name:values.get('name'),title:values.get('title')||'',organization:values.get('organization')||'',authority:values.get('authority')==='on',agree:values.get('agree')==='on',electronicConsent:values.get('electronicConsent')==='on',demoAcknowledged:values.get('demoAcknowledged')==='on'});await render();message('Contract signed successfully. Download your signed copy below.');if(onSigned)await onSigned();}catch(err){card.querySelector('#signStatus').textContent=err.message;message(err.message,true,err.field);button.disabled=false;}};
  }
  try{await render();}catch(err){card.textContent='Contract workspace unavailable. Refresh to try again.';message(err.message,true,err.field);}
