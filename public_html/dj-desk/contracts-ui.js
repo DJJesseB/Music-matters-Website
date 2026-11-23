@@ -1,7 +1,7 @@
 import {mountStripePayments} from './stripe-ui.js?v=181';
 import {paymentGuide} from './payment-guide.js?v=221';
 import {packageDetails} from './package-ui.js?v=205';
-import {mountPaperContract} from './paper-contract-ui.js?v=224';
+import {mountPaperContract} from './paper-contract-ui.js?v=225';
 function printContractCopy(contract,esc,money){
  const snapshot=contract.snapshot||{}, event=snapshot.event||{}, financials=snapshot.financials||{};
  const heading=value=>esc(value??'');
