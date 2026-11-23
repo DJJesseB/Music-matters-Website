@@ -79,12 +79,14 @@ function dj_school_invoice_route(string $path, string $method, array $input): vo
         $customDue = (string)($input['dueDate']??'');
         $notes = trim((string)($input['notes']??''));
         if ($school===''||mb_strlen($school)>255||mb_strlen($billTo)>255||mb_strlen($address)>1000||mb_strlen($po)>100||mb_strlen($notes)>2000) json_error('Enter valid school billing information.',422);
-        if (!in_array($terms,['due','net15','net30','custom'],true)) json_error('Choose invoice payment terms.',422);
+        if (!in_array($terms,['due','net15','net30','event','custom'],true)) json_error('Choose invoice payment terms.',422);
         $issuedOn = gmdate('Y-m-d');
         $validDate=static function($value){$d=DateTimeImmutable::createFromFormat('!Y-m-d',$value);return $d&&$d->format('Y-m-d')===$value;};
         if ($terms==='custom'&&(!$validDate($customDue)||$customDue<$issuedOn))json_error('Choose a valid custom due date.',422);
+        $eventDate = (string)($event['date'] ?? '');
+        if ($terms==='event' && (!$validDate($eventDate) || $eventDate < $issuedOn)) json_error('The event date must be valid and on or after the invoice date. Use custom terms for an event that has already passed.',422);
         if ($payee===''||$mailing===''||mb_strlen($payee)>255||mb_strlen($mailing)>1000)json_error('Enter the check payee name and mailing instructions.',422);
-        $dueDate=$terms==='net15'?gmdate('Y-m-d',strtotime('+15 days')):($terms==='net30'?gmdate('Y-m-d',strtotime('+30 days')):($terms==='custom'?$customDue:$issuedOn));
+        $dueDate=$terms==='net15'?gmdate('Y-m-d',strtotime('+15 days')):($terms==='net30'?gmdate('Y-m-d',strtotime('+30 days')):($terms==='event'?$eventDate:($terms==='custom'?$customDue:$issuedOn)));
         $amount=(float)($event['amount']??0);$paid=(float)($event['paid']??0);
         if (!is_finite($amount)||$amount<0||!is_finite($paid)||$paid<0)json_error('The booking has invalid financial amounts.',422);
         // Only the current outstanding event balance can be newly invoiced; previously
