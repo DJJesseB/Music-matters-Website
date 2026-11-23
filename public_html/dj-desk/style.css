@@ -325,3 +325,24 @@ img[data-addon-photo]{cursor:zoom-in}img[data-addon-photo]:focus-visible{outline
  .event-hq-facts {grid-template-columns:repeat(3,minmax(0,1fr)); font-size:13px}
  .event-hq-tabs button {padding-inline:9px}
 }
+
+.client-plan-header {margin-bottom:24px}
+.client-plan-header h1 {margin:8px 0;font-size:clamp(1.7rem,4vw,2.35rem)}
+.client-plan-header p {margin:4px 0;color:var(--muted)}
+.client-plan-nav {display:flex;flex-wrap:wrap;gap:6px 18px}
+.client-plan-status span {display:inline-block;margin-inline-start:12px}
+.client-plan-status strong {color:#f5f6f2}
+.client-plan-intro {margin-bottom:12px}
+.client-plan-intro h2 {margin:0 0 4px}
+.client-plan-intro p {margin:4px 0}
+.client-plan-section.card,.client-plan-tools.card {padding:0;margin-bottom:10px}
+.client-plan-section > summary,.client-plan-tools > summary {padding:13px 16px;cursor:pointer;font-weight:650}
+.client-plan-section > summary h2 {display:inline;font-size:inherit;margin:0}
+.client-plan-tools > summary small {display:block;margin:4px 0 0;color:var(--muted);font-weight:400}
+.client-plan-section-content,.client-plan-tool-content {padding:0 16px 16px}
+.client-plan-section-content > :first-child {margin-top:0}
+.client-plan-tool-content > .card:last-child {margin-bottom:0}
+.client-plan-billing {display:flex;flex-wrap:wrap;gap:12px 28px}
+.client-plan-billing dt,.client-plan-billing small {color:var(--muted)}
+.client-plan-billing dd {margin:3px 0 0;font-weight:700}
+.client-plan-billing small {display:block;font-weight:400}

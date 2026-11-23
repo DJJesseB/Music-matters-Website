@@ -1,5 +1,6 @@
 export function fieldSelector(path){
  if(typeof path!=='string')return null;
+ if(/^answer_[a-zA-Z0-9_]+$/.test(path))return `[name="${path}"]`;
  let m=path.match(/^wedding\.values\.([a-zA-Z0-9_]+)$/);if(m)return `[name="w_${m[1]}"]`;
  m=path.match(/^answers\.([a-zA-Z0-9_]+)$/);if(m)return `[name="answer_${m[1]}"]`;
  if(path==='wedding.moments.ceremony.enabled')return '[name="ceremonyCoverage"][value="Yes"]';
