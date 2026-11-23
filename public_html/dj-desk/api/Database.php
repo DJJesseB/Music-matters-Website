@@ -1334,6 +1334,20 @@ class DJ_Database {
         } else {
             $depositRequired = max($stdDeposit, $pctAmount);
         }
+        // A booking-specific retainer override is explicitly controlled by an admin.
+        // No override means the standard retainer policy continues to apply.
+        $override = filter_var($input['depositOverride'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        if ($override) {
+            $requested = $input['depositRequired'] ?? null;
+            if (!is_numeric($requested) || !is_finite((float)$requested) || (float)$requested < 0 || (float)$requested > 1000000) {
+                return ['error' => 'Enter a valid custom retainer amount of $0 or more.', 'code' => 422];
+            }
+            $depositRequired = round((float)$requested, 2);
+            if (abs((float)$requested - $depositRequired) > 0.000001) {
+                return ['error' => 'Retainer amount must be entered to the nearest cent.', 'code' => 422];
+            }
+        }
+        $body['depositOverride'] = $override;
         $body['depositRequired'] = $depositRequired;
         $body['depositReceived'] = (float)($body['depositReceived'] ?? 0);
         $body['paid'] = (float)($body['paid'] ?? 0);
