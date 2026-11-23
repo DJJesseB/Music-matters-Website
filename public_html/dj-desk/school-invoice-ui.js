@@ -25,6 +25,8 @@ export async function mountSchoolInvoices({api,app,event,esc,money,message}){
 
  async function load(){
   const invoices=await api(endpoint);if(!info.isConnected)return;
+  const currentInvoice=invoices.find(invoice=>invoice.status==='Issued');
+  const olderInvoices=invoices.filter(invoice=>invoice!==currentInvoice);
   info.innerHTML='<details open><summary>Create invoice for school business office</summary><form data-invoice-create><div class="grid">'+
    field('School / district name *','school',event.client?.organization||'', 'text','required maxlength="255"')+
    field('Bill to / Accounts Payable','billTo','Accounts Payable','text','maxlength="255"')+
@@ -36,9 +38,11 @@ export async function mountSchoolInvoices({api,app,event,esc,money,message}){
    note('Check mailing / delivery instructions *','mailingAddress','P.O. Box 386\nMillbrook, NY 12545')+
    note('Additional invoice notes','notes','')+
    '</div>'+(invoices.some(i=>i.status==='Issued')?'<label class="check-row"><input name="replacePrior" type="checkbox" value="1" required><span>Replace the existing issued invoice with a new revision (all received checks must be resolved)</span></label>':'')+'<button type="submit" class="button">Issue school invoice</button><p class="hint">The invoice freezes the current event pricing. Later booking changes require a new invoice version. Check payee and mailing instructions are required.</p><small data-invoice-error role="status"></small></form></details>'+
-   '<h3>Invoice history</h3><div data-invoice-history></div>';
-  const list=info.querySelector('[data-invoice-history]');
-  if(!invoices.length)list.innerHTML='<p>No invoices have been issued for this event yet.</p>';
+   (currentInvoice?'<h3>Current invoice</h3><div data-current-invoice></div>':
+    '<p>'+(invoices.length?'No current invoice.':'No invoices have been issued for this event yet.')+'</p>')+
+   (olderInvoices.length?'<details class="card"><summary>Invoice history</summary><div data-invoice-history></div></details>':'');
+  const current=info.querySelector('[data-current-invoice]');
+  const history=info.querySelector('[data-invoice-history]');
   for(const invoice of invoices){
    const shell=document.createElement('details');
    shell.className='card';shell.style.margin='12px 0';
@@ -66,10 +70,11 @@ export async function mountSchoolInvoices({api,app,event,esc,money,message}){
     }
     checkList.append(row);
    }
-   list.append(shell);
+   if(invoice===currentInvoice)current.append(shell);
+   else history.append(shell);
   }
   const f=info.querySelector('[data-invoice-create]');
-  f.onsubmit=async e=>{e.preventDefault();const button=f.querySelector('button[type=submit]');button.disabled=true;const data=Object.fromEntries(new FormData(f));try{if(!data.school.trim()||!data.payee.trim()||!data.mailingAddress.trim())throw Error('School, check payee, and delivery instructions are required.');const result=await api(endpoint,'POST',data);message('School invoice '+result.number+' issued. Print or save the invoice from its history entry.');await load();}catch(error){f.querySelector('[data-invoice-error]').textContent=error.message;message(error.message,true);button.disabled=false;}};
+  f.onsubmit=async e=>{e.preventDefault();const button=f.querySelector('button[type=submit]');button.disabled=true;const data=Object.fromEntries(new FormData(f));try{if(!data.school.trim()||!data.payee.trim()||!data.mailingAddress.trim())throw Error('School, check payee, and delivery instructions are required.');const result=await api(endpoint,'POST',data);message('School invoice '+result.number+' issued. Print or save it from the current invoice.');await load();}catch(error){f.querySelector('[data-invoice-error]').textContent=error.message;message(error.message,true);button.disabled=false;}};
  }
  try{await load();}catch(error){info.textContent='Unable to open school invoices: '+error.message;message(error.message,true);}
 }

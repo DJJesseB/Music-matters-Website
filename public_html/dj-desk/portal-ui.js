@@ -7,7 +7,7 @@ import {mountPackageSummary} from './package-ui.js?v=205';
 import {timeField,bindTimeFields,readTime} from './time-input.js?v=180';
 import {mountWedding} from './wedding-ui.js?v=181';
 import {mountContracts} from './contracts-ui.js?v=227';
-import {mountSchoolInvoices} from './school-invoice-ui.js?v=232';
+import {mountSchoolInvoices} from './school-invoice-ui.js?v=233';
 function mountClock(anchor,event){
  const card=document.createElement('section');card.className='event-clock card';
  card.innerHTML='<div class="clock-heading"><div><h2>Event clock</h2></div><button type="button" class="clock-toggle" aria-expanded="false" aria-controls="liveEventClock">◷ &nbsp; Show live clock & countdown</button></div><div id="liveEventClock" hidden><div class="clock-displays"><div><span>Current local time</span><strong id="clockTime"></strong><small id="clockDate"></small></div><div><span id="countdownLabel"></span><strong id="clockCountdown"></strong><small id="countdownDate"></small></div></div><p class="clock-zone">Times use this device’s timezone.</p></div>';
