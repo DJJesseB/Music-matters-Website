@@ -7,7 +7,7 @@ export async function mountSchoolInvoices({api,app,event,esc,money,message}){
  const root=document.createElement('section');root.className='card';root.id='schoolInvoices';
  root.innerHTML='<h2>School invoices & check payments</h2><p>Issue a printable invoice for the school business office. An invoice may be issued before the contract is signed. Checks do not count as paid until cleared.</p><div data-school-invoices>Loading invoices…</div>';
  const anchor=app.querySelector('#contractWorkspace')||app.querySelector('[data-portal-anchor],#clientPlan');
- anchor?.before(root);
+ if(anchor)anchor.before(root);else app.append(root);
  const endpoint='admin/events/'+event.id+'/invoices';
  const info=root.querySelector('[data-school-invoices]');
  const validDate=value=>/^(19|20)\d{2}-\d{2}-\d{2}$/.test(value);
