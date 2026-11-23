@@ -1,5 +1,5 @@
 import {mountStripePayments} from './stripe-ui.js?v=181';
-import {mountFollowups} from './followup-ui.js?v=180';
+import {mountFollowups} from './followup-ui.js?v=181';
 import {paymentGuide} from './payment-guide.js?v=221';
 import './lighting-addon.js?v=211';
 import './addon-photo-preview.js?v=205';
@@ -72,24 +72,139 @@ function field(label,key,value='',type='text',extra=''){if(type==='time')return 
 function select(label,key,value,values){return `<label>${label}<select name="${key}">${values.map(v=>`<option ${v===value?'selected':''}>${esc(v)}</option>`).join('')}</select></label>`;}
 function area(label,key,value){return `<label class="wide">${label}<textarea name="${key}">${esc(value)}</textarea></label>`;}
 const section=(name,body,id)=>`<section class="card" data-section="${id}"><fieldset><legend>${name}</legend><div class="grid">${body}</div></fieldset></section>`;
-function editor(e){const isNew=!e;e=e||{name:'',type:'Wedding',status:'Inquiry',client:{},amount:0,paid:0,depositRequired:0,depositReceived:0,plannerStatus:'Not started',musicStatus:'Not started',contractStatus:'Not sent'};tab='overview';
- app.innerHTML=head(isNew?'START SOMETHING GREAT':'EVENT HQ',isNew?'New booking':esc(e.name),isNew?'Start with the essentials. Build out the details as plans take shape.':`${esc(e.type)} · ${date(e.date)} · ${esc(e.client.name)}`,'<a class="button secondary" href="#events">← Events</a>')+(!isNew?`<div class="stats"><div class="stat">Booking<strong>${esc(e.status)}</strong><small>Inquiry and tentative dates are not confirmed</small></div><div class="stat">Balance<strong>${money(balance(e))}</strong><small>${money(e.paid)} recorded as paid</small></div><div class="stat">Contract<strong>${esc(e.contractStatus)}</strong><small>Manual tracking</small></div><div class="stat">Planner<strong>${esc(e.plannerStatus)}</strong><small>${e.plannerLastSavedAt?'Last saved '+esc(new Date(e.plannerLastSavedAt).toLocaleString()):'Admin workspace'}</small></div></div>`:'')+`<div class="tabs" role="group" aria-label="Event workspace">${[['overview','Overview'],['finance','Contract & payments'],['planning','Planner & music']].map(([id,t])=>`<button type="button" data-tab="${id}" class="${id===tab?'active':''}" aria-pressed="${id===tab}">${t}</button>`).join('')}</div><form id="booking">`+
+const eventTabs = [
+ ['overview', 'Overview'], ['finance', 'Financials'], ['documents', 'Documents'],
+ ['planning', 'Planner'], ['activity', 'Activity']
+];
+const eventsLink = '<a class="button secondary" href="#events">← Events</a>';
+const eventLink = (route, e, label) => `<a class="button secondary" href="#${route}/${esc(e.id)}">${label}</a>`;
+function eventHeader(e) {
+ return `<div class="event-hq-header">
+  <div class="event-hq-title"><div><p class="eyebrow">Event HQ</p><h1>${esc(e.name)}</h1></div>${eventsLink}</div>
+  <dl class="event-hq-facts">
+   <div><dt>Client</dt><dd>${esc(e.client.name || 'To be decided')}</dd></div>
+   <div><dt>Event date</dt><dd>${e.date ? date(e.date) : 'To be decided'}</dd></div>
+   <div><dt>Venue</dt><dd>${esc(e.venue || 'To be decided')}</dd></div>
+   <div><dt>Status</dt><dd>${badge(e)}</dd></div>
+   <div><dt>Balance</dt><dd id="eventHqBalance">${money(balance(e))}</dd></div>
+  </dl>
+  <div class="tabs event-hq-tabs" role="group" aria-label="Event workspace">${eventTabs.map(([id,label])=>
+   `<button type="button" data-tab="${id}">${label}</button>`).join('')}</div>
+ </div>`;
+}
+function eventNextActions(e) {
+ const actions = [];
+ if (active(e)) {
+  if (e.contractStatus !== 'Signed') actions.push(['documents', e.contractStatus === 'Sent' ? 'Check contract signature' : 'Prepare the contract']);
+  if (Number(e.depositRequired) > Number(e.depositReceived)) actions.push(['finance', 'Review the outstanding retainer']);
+  else if (balance(e) > 0) actions.push(['finance', 'Review the remaining balance']);
+  if (e.plannerStatus !== 'Ready') actions.push(['planning', 'Review the event planner']);
+  else if (e.musicStatus !== 'Ready') actions.push(['planning', 'Review music selections']);
+ }
+ return `<section class="card event-hq-next" data-section="overview"><h2>Next actions</h2>${
+  actions.length ? `<ul>${actions.map(([id,label])=>`<li><button type="button" class="secondary" data-open-event-tab="${id}">${label} →</button></li>`).join('')}</ul>`
+   : '<p>No next actions for this booking.</p>'}</section>`;
+}
+function eventDisclosure(name, body) {
+ return `<details class="event-hq-disclosure"><summary>${name}</summary>${body}</details>`;
+}
+function editor(e, initialTab='overview'){
+ const isNew=!e;
+ e=e||{name:'',type:'Wedding',status:'Inquiry',client:{},amount:0,paid:0,depositRequired:0,depositReceived:0,plannerStatus:'Not started',musicStatus:'Not started',contractStatus:'Not sent'};
+ tab=initialTab;
+ const newTabs = [['overview','Overview'],['finance','Contract & payments'],['planning','Planner & music']];
+ const docTab = isNew ? 'finance' : 'documents';
+ const plannerLinks = isNew ? '' : `<div class="wide event-hq-links">${eventLink('client-plan',e,'Client planner & access →')}${eventLink('music-admin',e,'Song requests & QR →')}</div>`;
+ const contractControls = select('Contract status','contractStatus',e.contractStatus,options.contractStatus);
+ const retainerControls = field('Required retainer ($)','depositRequired',e.depositRequired??standardDeposit,'number','min="0" step="0.01" required readonly')+
+  `<label class="wide check-row"><input type="checkbox" name="depositOverride" value="1" ${e.depositOverride?'checked':''}><span>Set a custom retainer amount (enter $0 to waive the retainer)</span></label><p class="wide hint" id="depositHelp">${esc(depositPolicy)}</p>`;
+ const discounts = `<p class="wide hint">Cash-payment discounts are optional and admin-controlled. Record any agreed reduction in your quote or contract.</p>`+
+  field('Discount ($) — admin only','discount',e.discount??(e.weddingPackage?Math.max(0,Math.round((e.weddingPackage.total-e.amount)*100)/100):0),'number','min="0" step="0.01" required');
+ const actions = `<div class="actions"><button type="submit" id="saveBooking">${isNew?'Create booking':'Save changes'}</button><a href="#events" class="button secondary">Cancel</a><small id="saveState">${isNew?'Required: event name, date, client name, email.':'Save to update this booking.'}</small></div>`;
+ app.innerHTML=(isNew ? head('START SOMETHING GREAT','New booking','Start with the essentials. Build out the details as plans take shape.',eventsLink)+
+  `<div class="tabs" role="group" aria-label="Event workspace">${newTabs.map(([id,label])=>`<button type="button" data-tab="${id}">${label}</button>`).join('')}</div>`
+  : eventHeader(e))+`<form id="booking"${isNew?'':' class="event-hq-form"'}>`+
  section('Event essentials',field('Event name *','name',e.name,'text','required maxlength="200"')+select('Event type','type',e.type,options.type)+field('Event date *','date',e.date,'date','required')+select('Booking state','status',e.status,options.status)+field('Venue','venue',e.venue)+field('Venue address','address',e.address)+field('Guest count','guests',e.guests||0,'number','min="0" max="100000" step="1"')+field('Package','package',e.package)+field('Event / reception start','startTime',e.startTime,'time')+field('Event end','endTime',e.endTime,'time')+field('Setup arrival','setupTime',e.setupTime,'time')+field('Load-out','loadOutTime',e.loadOutTime,'time')+area('Equipment requirements','equipment',e.equipment),'overview')+
- section('Client details',field('Primary contact *','clientName',e.client.name,'text','required maxlength="300"')+field('Email *','email',e.client.email,'email','required maxlength="300"')+field('Phone','phone',e.client.phone)+field('Organization / school','organization',e.client.organization)+field('Secondary contact details','secondaryContact',e.secondaryContact)+select('Communication preference','communication',e.communication||'Email',['Email','Phone','Text'])+area('Internal admin notes','notes',e.notes),'overview')+
- section('Event planner',`<div class="wide hint" id="plannerGuide"></div>`+select('Planner status','plannerStatus',e.plannerStatus,options.plannerStatus)+select('Music status','musicStatus',e.musicStatus,options.musicStatus)+area('Planner answers & timeline','planner',e.planner)+area('Must-play, do-not-play, and special songs','music',e.music),'planning')+
-  section('Contract & payments',`<p class="wide">Stripe payments update automatically after confirmation. Record cash, checks, and money orders manually. Total paid includes the retainer. Package selections populate the subtotal and contract amount automatically. Discounts are admin-only.  Use Client planner & access for the contract.</p>${!isNew&&e.type==='School dance'?`<p class="wide"><a class="button" href="#school-invoices/${e.id}">🧾 School invoices &amp; check payments →</a></p>`:''}`+select('Contract status','contractStatus',e.contractStatus,options.contractStatus)+`<div class="wide"><button type="submit" data-prepare-contract>Prepare & send contract →</button><p class="input-guidance">Saves this booking and opens contract preparation.</p></div><div class="wide" id="financePackageSummary"></div>`+field('Package / services subtotal ($)','subtotal',e.weddingPackage?.total??e.subtotal??e.amount,'number','min="0" step="0.01" required')+`<div class="wide hint">Cash-payment discounts are optional and admin-controlled. Enter only an agreed reduction below and describe it in your quote or contract. There is no automatic cash discount.</div>`+field('Discount ($) — admin only','discount',e.discount??(e.weddingPackage?Math.max(0,Math.round((e.weddingPackage.total-e.amount)*100)/100):0),'number','min="0" step="0.01" required')+field('Contract amount after discount ($)','amount',e.amount,'number','min="0" step="0.01" required readonly')+field('Required retainer ($)','depositRequired',e.depositRequired??standardDeposit,'number','min="0" step="0.01" required readonly')+`<label class="wide check-row"><input type="checkbox" name="depositOverride" value="1" ${e.depositOverride?'checked':''}><span>Set a custom retainer amount (enter $0 to waive the retainer)</span></label><p class="wide hint" id="depositHelp">${esc(depositPolicy)}</p>`+field('Retainer received ($)','depositReceived',e.depositReceived,'number','min="0" step="0.01" required')+field('Total paid including retainer ($)','paid',e.paid,'number','min="0" step="0.01" required')+field('Retainer due','depositDue',e.depositDue,'date')+field('Balance due','balanceDue',e.balanceDue,'date')+`<div class="wide">${paymentGuide(e,esc,money)}</div><div class="wide"><small>Remaining balance</small><div class="amount" id="balance"></div></div>`,'finance')+`<div class="actions"><button type="submit">${isNew?'Create booking':'Save changes'}</button><a href="#events" class="button secondary">Cancel</a><small id="saveState">${isNew?'Required: event name, date, client name, email.':'All changes save automatically to your database.'}</small></div></form>`;
- if(!isNew){const link=document.createElement('a');link.className='button secondary';link.href='#client-plan/'+e.id;link.textContent='Client planner & access →';if(e.type==='School dance'){const invoiceLink=document.createElement('a');invoiceLink.className='button secondary';invoiceLink.href='#school-invoices/'+e.id;invoiceLink.textContent='🧾 School invoices & checks →';document.querySelector('.tabs').append(invoiceLink);}const musicLink=document.createElement('a');musicLink.className='button secondary';musicLink.href='#music-admin/'+e.id;musicLink.textContent='♫ Song requests & QR →';document.querySelector('.tabs').append(musicLink);document.querySelector('.tabs').append(link);}if(!isNew)mountFollowups({app,event:e,api,esc,message,onClosed:saved=>{dirty=false;editor(saved);}}).catch(error=>message(error.message,true));const form=document.querySelector('#booking');if(!isNew)mountStripePayments({root:form.querySelector('[data-section=finance]'),event:e,api,admin:true,esc,money,message});bindTimeFields(form);const packageEditor=mountPackageEditor({form,event:e,esc,money,changed:()=>dirty=true});const tabs=()=>{document.querySelectorAll('[data-section]').forEach(el=>el.hidden=el.dataset.section!==tab||!!el.dataset.eventTypes&&!el.dataset.eventTypes.split('|').includes(form.elements.type.value));document.querySelectorAll('[data-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.tab===tab);b.setAttribute('aria-pressed',String(b.dataset.tab===tab));});};document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;tabs();});tabs();
- if(!isNew){const insuranceButton=document.createElement('button');insuranceButton.type='button';insuranceButton.dataset.tab='insurance';insuranceButton.textContent='Insurance / COI';document.querySelector('.tabs').append(insuranceButton);const panel=document.createElement('div');panel.dataset.insurancePanel='';app.append(panel);insurance.renderEvent(e,panel);panel.hidden=true;insuranceButton.onclick=()=>{tab='insurance';tabs();panel.hidden=false;};document.querySelectorAll('[data-tab]:not([data-tab=insurance])').forEach(button=>button.addEventListener('click',()=>panel.hidden=true));}
+ section('Client details',field('Primary contact *','clientName',e.client.name,'text','required maxlength="300"')+field('Email *','email',e.client.email,'email','required maxlength="300"')+field('Phone','phone',e.client.phone)+field('Organization / school','organization',e.client.organization)+field('Secondary contact details','secondaryContact',e.secondaryContact)+select('Communication preference','communication',e.communication||'Email',['Email','Phone','Text'])+(isNew ? area('Internal admin notes','notes',e.notes) : `<div class="wide">${eventDisclosure('Internal admin notes',area('Notes','notes',e.notes))}</div>`),'overview')+
+ section('Event planner',plannerLinks+`<div class="wide hint" id="plannerGuide"></div>`+select('Planner status','plannerStatus',e.plannerStatus,options.plannerStatus)+select('Music status','musicStatus',e.musicStatus,options.musicStatus)+area('Planner answers & timeline','planner',e.planner)+area('Must-play, do-not-play, and special songs','music',e.music),'planning')+
+ section('Contract',
+  `<div class="wide event-hq-links"><button type="button" data-prepare-contract>Prepare & send contract →</button>${isNew?'':`<a class="button secondary" href="#client-plan/${esc(e.id)}?contract">Open contract workspace →</a>`}</div>
+  <p class="wide input-guidance">Preparing a contract saves this booking first.${isNew?'':' Open the contract workspace to view, print or download an existing agreement.'}</p>`+
+  (isNew ? contractControls : `<div class="wide"><p>Contract status: <strong>${esc(e.contractStatus)}</strong></p>${eventDisclosure('Manual contract status',contractControls)}</div>`),docTab)+
+ section('Payments & invoices',
+  `<p class="wide">Stripe payments update after confirmation. Enter cash, checks and money orders manually. Total paid includes the retainer.</p>${!isNew&&e.type==='School dance'?`<div class="wide">${eventLink('school-invoices',e,'School invoices & check payments →')}</div>`:''}<div class="wide" id="financePackageSummary"></div>`+
+  field('Package / services subtotal ($)','subtotal',e.weddingPackage?.total??e.subtotal??e.amount,'number','min="0" step="0.01" required')+
+  field('Contract amount after discount ($)','amount',e.amount,'number','min="0" step="0.01" required readonly')+
+  (isNew ? discounts+retainerControls : `<div class="wide">${eventDisclosure('Retainer & discounts',`<div class="grid">${retainerControls}${discounts}</div>`)}</div>`)+
+  field('Retainer received ($)','depositReceived',e.depositReceived,'number','min="0" step="0.01" required')+
+  field('Total paid including retainer ($)','paid',e.paid,'number','min="0" step="0.01" required')+
+  field('Retainer due','depositDue',e.depositDue,'date')+field('Balance due','balanceDue',e.balanceDue,'date')+
+  `<div class="wide">${paymentGuide(e,esc,money)}</div><div class="wide"><small>Remaining balance</small><div class="amount" id="balance"></div></div>`,'finance')+
+  actions+'</form>';
+ const form=app.querySelector('#booking');
+ const saveButton=form.querySelector('#saveBooking');
+ const contractButton=form.querySelector('[data-prepare-contract]');
+ let preparingContract=false;
+ contractButton.onclick=()=>{
+  preparingContract=true;
+  form.requestSubmit(saveButton);
+  preparingContract=false;
+ };
+ if(!isNew)mountStripePayments({root:form.querySelector('[data-section=finance]'),event:e,api,admin:true,esc,money,message});
+ bindTimeFields(form);
+ const packageEditor=mountPackageEditor({form,event:e,esc,money,changed:()=>dirty=true});
+ if(!isNew){
+  const bookingSections=[...form.querySelectorAll(':scope > [data-section=overview]')];
+  const bookingDetails=document.createElement('details');
+  bookingDetails.className='event-hq-disclosure';
+  bookingDetails.dataset.section='overview';
+  bookingDetails.innerHTML='<summary>Booking details & package</summary>';
+  bookingSections[0].before(bookingDetails);
+  bookingDetails.append(...bookingSections);
+  form.insertAdjacentHTML('afterbegin',eventNextActions(e));
+  const documentControls=document.createElement('section');
+  documentControls.dataset.section='documents';
+  documentControls.innerHTML=eventDisclosure('Insurance / COI','<div data-insurance-panel></div>');
+  app.append(documentControls);
+  insurance.renderEvent(e,documentControls.querySelector('[data-insurance-panel]'));
+  const activity=document.createElement('section');
+  activity.className='card';
+  activity.dataset.section='activity';
+  activity.innerHTML=`<h2>Planner activity</h2><p>${e.plannerLastSavedAt?`Last saved ${esc(new Date(e.plannerLastSavedAt).toLocaleString())}`:'No planner save recorded.'}</p>`;
+  app.append(activity);
+  mountFollowups({app,event:e,api,esc,message,workspace:'activity',onClosed:saved=>{dirty=false;editor(saved,tab);}}).catch(error=>message(error.message,true));
+ }
+ const tabs=()=>{
+  app.querySelectorAll('[data-section]').forEach(el=>{
+   el.hidden=el.dataset.section!==tab||!!el.dataset.eventTypes&&!el.dataset.eventTypes.split('|').includes(form.elements.type.value);
+  });
+  app.querySelectorAll('[data-tab]').forEach(button=>{
+   const selected=button.dataset.tab===tab;
+   button.classList.toggle('active',selected);
+   button.setAttribute('aria-pressed',String(selected));
+  });
+  form.querySelector('.actions').hidden=tab==='activity';
+ };
+ const openTab=(id,focus=false)=>{
+  tab=id;
+  tabs();
+  const header=app.querySelector('.event-hq-header');
+  if(header && header.getBoundingClientRect().top<=0)app.scrollIntoView();
+  if(focus)app.querySelector(`[data-tab="${id}"]`)?.focus({preventScroll:true});
+ };
+ app.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>openTab(button.dataset.tab));
+ app.querySelectorAll('[data-open-event-tab]').forEach(button=>button.onclick=()=>openTab(button.dataset.openEventTab,true));
+ tabs();
  function guide(){const type=form.elements.type.value;document.querySelector('#plannerGuide').textContent=type==='Wedding'?'Wedding structure: couple & wedding party • ceremony and processional • introductions • first dance & parent dances • toasts • dinner • special traditions • final song • timeline and pronunciation notes.':type==='School dance'?'School dance structure: advisor & school contacts • theme and schedule • clean-music policy • student requests / playlist links • do-not-play rules • announcements • supervision and safety • setup and power • request deadline.':'General structure: key contacts • schedule • announcements • music preferences • venue logistics.';}
- const calc=()=>{packageEditor.updateFinance();if(form.elements.depositRequired){const custom=form.elements.depositOverride.checked;form.elements.depositRequired.readOnly=!custom;if(!custom){const total=Number(form.elements.amount.value||0);form.elements.depositRequired.value=calculateDeposit(total);}document.querySelector('#depositHelp').textContent=custom?(Number(form.elements.depositRequired.value)===0?'Retainer waived for this booking. The agreed event balance remains payable under the contract.':'Custom retainer for this booking. This amount will be saved and included in the contract.'):depositPolicy;}document.querySelector('#balance').textContent=money(Number(form.elements.amount.value)-Number(form.elements.paid.value));};guide();calc();
- form.addEventListener('input',()=>{dirty=true;document.querySelector('#saveState').textContent='Unsaved changes';calc();guide();});
+ const calc=()=>{packageEditor.updateFinance();if(form.elements.depositRequired){const custom=form.elements.depositOverride.checked;form.elements.depositRequired.readOnly=!custom;if(!custom){const total=Number(form.elements.amount.value||0);form.elements.depositRequired.value=calculateDeposit(total);}document.querySelector('#depositHelp').textContent=custom?(Number(form.elements.depositRequired.value)===0?'Retainer waived for this booking. The agreed event balance remains payable under the contract.':'Custom retainer for this booking. This amount will be saved and included in the contract.'):depositPolicy;}const remaining=money(Number(form.elements.amount.value)-Number(form.elements.paid.value));form.querySelector('#balance').textContent=remaining;const headerBalance=app.querySelector('#eventHqBalance');if(headerBalance)headerBalance.textContent=remaining;};guide();calc();
+ form.addEventListener('input',()=>{dirty=true;document.querySelector('#saveState').textContent='Unsaved changes';calc();guide();if(event.target===form.elements.type)tabs();});
  form.addEventListener('invalid',event=>{const parent=event.target.closest('[data-section]');if(parent){tab=parent.dataset.section;tabs();}},true);
- form.onsubmit=async event=>{event.preventDefault();const prepareContract=event.submitter?.hasAttribute('data-prepare-contract');let weddingPackage,schoolPackage,privatePackage;try{weddingPackage=packageEditor.read();schoolPackage=packageEditor.readSchool();privatePackage=packageEditor.readPrivate();}catch(err){message(err.message,true);return;}const data=Object.fromEntries(new FormData(form));const payload={...data,weddingPackage,schoolPackage,privatePackage,version:e.version,client:{name:data.clientName,email:data.email,phone:data.phone,organization:data.organization}};for(const k of ['amount','subtotal','discount','depositRequired','depositReceived','paid','guests'])payload[k]=Number(data[k]);const button=form.querySelector('[type=submit]');button.disabled=true;
- try{const saved=await api('events'+(isNew?'':'/'+e.id),isNew?'POST':'PUT',payload);const selectedPackage=payload.weddingPackage||payload.schoolPackage||payload.privatePackage;const savedPackage=payload.weddingPackage?saved.weddingPackage:payload.schoolPackage?saved.schoolPackage:payload.privatePackage?saved.privatePackage:null;if(selectedPackage&&(!savedPackage||Object.keys(selectedPackage.selection||{}).some(key=>JSON.stringify(selectedPackage.selection[key])!==JSON.stringify(savedPackage.selection?.[key])))){dirty=true;throw Error('Booking was submitted, but the selected package or lighting upgrades could not be verified. Reopen the booking before making further changes.');}if(Boolean(saved.depositOverride)!==Boolean(payload.depositOverride)||Math.abs(Number(saved.depositRequired)-Number(payload.depositRequired))>0.009){dirty=true;throw Error('Booking was submitted, but the retainer amount was not saved as selected. Reopen the booking and verify the amount.');}dirty=false;events=await api('events');if(prepareContract)location.hash=`#client-plan/${saved.id}?contract`;else if(location.hash===`#event/${saved.id}`)editor(saved);else location.hash=`#event/${saved.id}`;message('Booking saved successfully.');}catch(err){message(err.message,true,err.field);button.disabled=false;}};
+ form.onsubmit=async event=>{event.preventDefault();const prepareContract=preparingContract;let weddingPackage,schoolPackage,privatePackage;try{weddingPackage=packageEditor.read();schoolPackage=packageEditor.readSchool();privatePackage=packageEditor.readPrivate();}catch(err){message(err.message,true);return;}const data=Object.fromEntries(new FormData(form));const payload={...data,weddingPackage,schoolPackage,privatePackage,version:e.version,client:{name:data.clientName,email:data.email,phone:data.phone,organization:data.organization}};for(const k of ['amount','subtotal','discount','depositRequired','depositReceived','paid','guests'])payload[k]=Number(data[k]);saveButton.disabled=true;contractButton.disabled=true;
+ try{const saved=await api('events'+(isNew?'':'/'+e.id),isNew?'POST':'PUT',payload);const selectedPackage=payload.weddingPackage||payload.schoolPackage||payload.privatePackage;const savedPackage=payload.weddingPackage?saved.weddingPackage:payload.schoolPackage?saved.schoolPackage:payload.privatePackage?saved.privatePackage:null;if(selectedPackage&&(!savedPackage||Object.keys(selectedPackage.selection||{}).some(key=>JSON.stringify(selectedPackage.selection[key])!==JSON.stringify(savedPackage.selection?.[key])))){dirty=true;throw Error('Booking was submitted, but the selected package or lighting upgrades could not be verified. Reopen the booking before making further changes.');}if(Boolean(saved.depositOverride)!==Boolean(payload.depositOverride)||Math.abs(Number(saved.depositRequired)-Number(payload.depositRequired))>0.009){dirty=true;throw Error('Booking was submitted, but the retainer amount was not saved as selected. Reopen the booking and verify the amount.');}dirty=false;events=await api('events');if(prepareContract)location.hash=`#client-plan/${saved.id}?contract`;else if(location.hash===`#event/${saved.id}`)editor(saved,tab);else location.hash=`#event/${saved.id}`;message('Booking saved successfully.');}catch(err){message(err.message,true,err.field);saveButton.disabled=false;contractButton.disabled=false;}};
 }
 const music=musicUI({api,app,head,esc,date,message});
 const booking=bookingUI({api,app,head,esc,field,area,money,message});
-const portal=portalUI({api,app,head,esc,field,area,money,date,message,onDirty:value=>dirty=value,onLogin:async result=>{auth=result;dirty=false;shell();if(result.user.role==='admin')options=await api('options');const target=result.user.role==='admin'?(location.hash.startsWith('#music-admin')?location.hash:'#dashboard'):'#portal';if(location.hash===target)await route();else location.hash=target;}});
+const portal=portalUI({api,app,head,esc,field,area,money,date,message,onDirty:value=>dirty=value,onLogin:async result=>{auth=result;dirty=false;shell();if(result.user.role==='admin')options=await api('options');const target=result.user.role==='admin'?(/^#(?:event\/[^/?]+|music-admin(?:\/[^/?]+)?)$/.test(location.hash)?location.hash:'#dashboard'):'#portal';if(location.hash===target)await route();else location.hash=target;}});
 const setup=setupUI({api,app,head,esc,money,message,onComplete:async session=>{auth=session;dirty=false;shell();if(session.user?.role==='admin')options=await api('options');location.hash='#dashboard';await route();}});
 function shell(){const nav=document.querySelector('nav');nav.innerHTML=(auth.user?(auth.user.role==='admin'?'<a href="#dashboard">◈ &nbsp; Dashboard</a><a href="#events">▦ &nbsp; Events</a><a href="#new">＋ &nbsp; New booking</a><a href="#requests">◇ &nbsp; Date requests</a><a href="#music-admin">♫ &nbsp; Song requests</a><a href="#finance">＄ &nbsp; Financial Center</a><a href="#social-media">▤ &nbsp; Social Media</a><a href="#insurance">▣ &nbsp; Insurance</a><a href="#settings">⚙ &nbsp; Settings</a>':'<a href="#portal">◈ &nbsp; My events</a>')+'<button type="button" class="secondary" id="logout">Sign out</button>':'');document.querySelector('header').firstElementChild.textContent=auth.user?(auth.user.role==='admin'?'ADMIN WORKSPACE':'CLIENT PORTAL'):(window.djDeskConfig?.brandName?(window.djDeskConfig.brandName.toUpperCase()+' · LIVE DESK'):'LIVE EVENT WORKSPACE');if(auth.user)document.querySelector('#logout').onclick=async()=>{if(dirty&&!confirm('Discard unsaved changes and sign out?'))return;try{await api('auth/logout','POST',{});auth={user:null};dirty=false;history.replaceState(null,'',location.pathname+'#dashboard');shell();portal.login();}catch(error){message('Sign-out failed: '+error.message,true);}};}
 let previous=location.hash||'#dashboard',ignoring=false;
