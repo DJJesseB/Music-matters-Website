@@ -32,8 +32,8 @@ export async function mountSchoolInvoices({api,app,event,esc,money,message}){
    field('Purchase order number (optional)','poNumber','', 'text','maxlength="100"')+
    '<label>Payment terms<select name="terms"><option value="due">Due on receipt</option><option value="net15">Net 15</option><option value="net30">Net 30</option><option value="event">On or before the date of the event</option><option value="custom">Custom due date</option></select></label>'+
    field('Custom due date','dueDate','', 'date')+
-   field('Make check payable to *','payee','', 'text','required maxlength="255"')+
-   note('Check mailing / delivery instructions *','mailingAddress','')+
+   field('Make check payable to *','payee','JESSE BARTO', 'text','required maxlength="255"')+
+   note('Check mailing / delivery instructions *','mailingAddress','P.O. Box 386\nMillbrook, NY 12545')+
    note('Additional invoice notes','notes','')+
    '</div>'+(invoices.some(i=>i.status==='Issued')?'<label class="check-row"><input name="replacePrior" type="checkbox" value="1" required><span>Replace the existing issued invoice with a new revision (all received checks must be resolved)</span></label>':'')+'<button type="submit" class="button">Issue school invoice</button><p class="hint">The invoice freezes the current event pricing. Later booking changes require a new invoice version. Check payee and mailing instructions are required.</p><small data-invoice-error role="status"></small></form></details>'+
    '<h3>Invoice history</h3><div data-invoice-history></div>';
