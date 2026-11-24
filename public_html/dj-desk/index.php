@@ -48,7 +48,7 @@ if (!$isResetRequested && !empty($config['configured'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title><?php echo htmlspecialchars($brandName); ?> · Live Event Desk</title>
     <link rel="stylesheet" href="./style.css?v=219">
-    <link rel="stylesheet" href="./music-performance.css?v=1">
+    <link rel="stylesheet" href="./music-performance.css?v=2">
     <script>
         window.djDeskConfig = {
             apiBase: '<?php echo addslashes($apiBase); ?>',
@@ -60,7 +60,7 @@ if (!$isResetRequested && !empty($config['configured'])) {
             tipLink: <?php echo json_encode($tipLink); ?>
         };
     </script>
-    <script type="module" src="./app.js?v=240"></script>
+    <script type="module" src="./app.js?v=241"></script>
 <link rel="stylesheet" href="/back-to-top.css?v=2"></head>
 <body>
     <aside>

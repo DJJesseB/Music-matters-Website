@@ -268,6 +268,7 @@ export function musicUI({api, app, head, esc, date, message}) {
                         <button type="button" class="secondary" data-launch-kiosk>Launch Request Kiosk</button>
                         <button type="button" class="secondary" data-sort-votes aria-pressed="false">Sort incoming by votes</button>
                         <button type="button" class="secondary" data-fullscreen>Full screen</button>
+                        <button type="button" class="secondary" data-reset-requests>Reset request list</button>
                     </div>
                     <div class="music-undo"><span data-action-feedback role="status"></span>
                         <button type="button" class="secondary" data-undo hidden>Undo</button></div>
@@ -289,6 +290,16 @@ export function musicUI({api, app, head, esc, date, message}) {
                 <dialog class="music-qr-dialog" aria-labelledby="event-qr-title"><h2 id="event-qr-title">${esc(data.event.name)}</h2>
                     <p>Scan to request a song</p><div data-qr-content></div>
                     <form method="dialog"><button type="submit" class="secondary">Close QR</button></form>
+                </dialog>
+                <dialog class="music-qr-dialog" data-reset-dialog aria-labelledby="request-reset-title">
+                    <h2 id="request-reset-title">Reset the request list?</h2>
+                    <p>This permanently clears all song requests, votes, and request history for this event. It also clears requester blocks and cooldowns.</p>
+                    <p>The event QR link, request settings, and paired kiosks stay in place.</p>
+                    <p data-reset-error role="alert"></p>
+                    <form method="dialog">
+                        <button type="submit" class="secondary" autofocus>Cancel</button>
+                        <button type="button" data-confirm-reset>Yes, reset request list</button>
+                    </form>
                 </dialog>
                 <dialog class="music-qr-dialog" data-kiosk-dialog aria-labelledby="kiosk-launch-title">
                     <h2 id="kiosk-launch-title">Launch Request Kiosk</h2>
@@ -504,6 +515,27 @@ export function musicUI({api, app, head, esc, date, message}) {
             if (current()) data = result;
         }
         pause.onclick = () => void mutate(pause, () => updateSettings(data.config.enabled ? 'pause' : 'open'));
+        const resetDialog = find('[data-reset-dialog]');
+        const resetError = find('[data-reset-error]');
+        const confirmReset = find('[data-confirm-reset]');
+        find('[data-reset-requests]').onclick = () => {
+            resetError.textContent = '';
+            resetDialog.showModal();
+        };
+        confirmReset.onclick = () => void mutate(confirmReset, async () => {
+            resetError.textContent = '';
+            try {
+                await api(path + '/reset', 'POST', {confirm: true});
+            } catch (error) {
+                if (current()) resetError.textContent = error.message;
+                return;
+            }
+            if (!current()) return;
+            resetDialog.close();
+            undo = null;
+            data = {...data, requests: [], counts: {Pending: 0, Approved: 0, Played: 0, Denied: 0}};
+            feedback.textContent = 'Request list reset.';
+        });
         find('[data-launch-kiosk]').onclick = () => {
             kioskSetup.reset();
             kioskSetup.hidden = false;

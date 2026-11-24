@@ -1648,6 +1648,35 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music$#', $path, $m)) {
     ]);
 }
 
+if (preg_match('#^admin/events/([a-f0-9-]+)/music/reset$#', $path, $m) && $method === 'POST') {
+    require_db();
+    $admin = require_admin();
+    if (!hash_equals($admin['csrf'], $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) json_error('Reload the request desk and try again.', 403);
+    if (($input['confirm'] ?? false) !== true) json_error('Confirm that you want to reset the request list.');
+    $id = $m[1];
+    if (!DJ_Database::get_event($id)) json_error('Event not found', 404);
+    ensure_music_options();
+    DJ_RequestKiosk::install();
+    $requests = DJ_Database::get_table_name('music_requests');
+    $pdo = DJ_Database::pdo();
+    $pdo->beginTransaction();
+    try {
+        DJ_RequestKiosk::lockEvent($id);
+        foreach (['music_request_history', 'music_kiosk_submissions'] as $name) {
+            $table = DJ_Database::get_table_name($name);
+            DJ_Database::query("DELETE FROM $table WHERE request_id IN (SELECT id FROM $requests WHERE event_id = ?)", [$id]);
+        }
+        foreach (['music_request_votes', 'music_request_blocks', 'music_requests'] as $name) {
+            DJ_Database::delete(DJ_Database::get_table_name($name), ['event_id' => $id]);
+        }
+        $pdo->commit();
+        json_response(['ok' => true]);
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    }
+}
+
 if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $path, $m)) {
     require_db();
     require_admin();
@@ -1667,8 +1696,16 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
     $actorId = $session['user']['email'] ?? 'admin';
 
     if (isset($input['action']) && in_array($input['action'], ['block', 'unblock'])) {
+        $pdo = DJ_Database::pdo();
+        $pdo->beginTransaction();
+        DJ_RequestKiosk::lockEvent($id);
+        if (!DJ_Database::get_var("SELECT 1 FROM $requests_table WHERE id = ? AND event_id = ?", [$requestId, $id])) {
+            $pdo->rollBack();
+            json_error('Request not found', 404);
+        }
         $kioskSources = DJ_RequestKiosk::sources();
         if (DJ_Database::get_var("SELECT 1 FROM $kioskSources WHERE request_id = ? AND submission_key = ?", [$requestId, $row['submission_key']])) {
+            $pdo->rollBack();
             json_error('Use the kiosk controls to pause or revoke a kiosk.', 409);
         }
         $blocked = ($input['action'] === 'block') ? 1 : 0;
@@ -1685,6 +1722,7 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
             'actor_id' => $actorId,
             'changed_at' => DJ_Database::now()
         ]);
+        $pdo->commit();
     } elseif (isset($input['status'])) {
         $status = trim((string)$input['status']);
         if (!in_array($status, ['Pending', 'Approved', 'Played', 'Denied'], true)) json_error('Invalid request status.', 400);

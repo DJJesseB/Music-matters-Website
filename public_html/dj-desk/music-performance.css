@@ -71,6 +71,9 @@
 .music-qr-dialog::backdrop { background: #09060deb; }
 .music-qr-dialog img { display: block; width: min(100%, 320px); height: auto; margin: 0 auto .75rem; background: white; }
 .music-qr-dialog form { margin-top: .65rem; }
+.music-qr-dialog [data-confirm-reset] { background: #b91c36; color: #fff; }
+.music-qr-dialog [data-confirm-reset]:hover:enabled { background: #99172c; }
+.music-qr-dialog [data-reset-error] { color: #ffabb9; }
 .music-booth:fullscreen { display: grid; align-content: start; padding: 1rem; overflow: auto; background: #0d0a12; }
 .music-guest-history { list-style: none; padding: 0; margin: 0; }
 .music-guest-history li { padding: .7rem 0; border-top: 1px solid #554169; overflow-wrap: anywhere; }

@@ -171,7 +171,31 @@ test('request kiosk and existing guest and DJ flows', async () => {
         const locked = await call('kiosk/exit', {...thirdDevice, body: {pin}, expect: 403});
         assert.match(locked.result.error, /locked/);
         const replacement = await launch();
-        await call('kiosk/pair', {...thirdDevice, body: {code: replacement.result.code}});
+        const renewed = await call('kiosk/pair', {...thirdDevice, body: {code: replacement.result.code}});
+        const renewedDevice = {...device, cookie: renewed.cookies.find(value => value.startsWith('dj_desk_kiosk=')).split(';')[0]};
+
+        const otherDesk = 'admin/events/' + otherEvent.id + '/music';
+        const openOther = await call(otherDesk, {...staff, body: {action: 'open', version: other.config.version}});
+        const otherGuest = 'music/' + openOther.result.config.url.split('/').pop();
+        const otherSong = await call(otherGuest, {body: {...submit('Other event song'), deviceId: randomUUID()}});
+        const reset = desk + '/reset';
+        await call(reset, {body: {confirm: true}, expect: 401});
+        await call(reset, {...renewedDevice, body: {confirm: true}, expect: 401});
+        await call(reset, {cookie: staff.cookie, body: {confirm: true}, expect: 403});
+        await call(reset, {...staff, body: {confirm: false}, expect: 400});
+        const beforeReset = (await call(desk, staff)).result;
+        assert.ok(beforeReset.requests.length);
+        await call(reset, {...staff, body: {confirm: true}});
+        const afterReset = (await call(desk, staff)).result;
+        assert.deepEqual(afterReset.requests, []);
+        assert.deepEqual(afterReset.counts, {Pending: 0, Approved: 0, Played: 0, Denied: 0});
+        assert.deepEqual(afterReset.config, beforeReset.config);
+        assert.equal((await call('kiosk/status', renewedDevice)).result.state, 'active');
+        assert.ok((await call(otherDesk, staff)).result.requests.some(row => row.id === otherSong.result.reference));
+        await call(desk + '/requests/' + saved.id, {...staff, method: 'PUT', body: {action: 'block'}, expect: 404});
+        const fresh = await call(guest, {body: {...submit('Mixed request'), deviceId: guestDevice}});
+        assert.equal(fresh.result.consolidated, false);
+        await call(guest, {body: {...submit('Still rate limited after a new submission'), deviceId: guestDevice}, expect: 429});
 
         if (process.env.KIOSK_PLAYWRIGHT_MODULE) {
             const {chromium} = createRequire(import.meta.url)(process.env.KIOSK_PLAYWRIGHT_MODULE);
