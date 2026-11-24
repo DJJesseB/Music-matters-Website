@@ -43,6 +43,7 @@ $config = file_exists($configFile) ? require $configFile : [];
 
 require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/Auth.php';
+require_once __DIR__ . '/RequestKiosk.php';
 require_once __DIR__ . '/QRCode.php';
 require_once __DIR__ . '/Mailer.php';
 
@@ -810,6 +811,10 @@ if ($path === 'auth/me' && $method === 'GET') {
 
 if ($path === 'auth/login' && $method === 'POST') {
     require_db();
+    if (DJ_RequestKiosk::credential($_COOKIE[DJ_RequestKiosk::COOKIE] ?? '')) {
+        DJ_RequestKiosk::install();
+        if (DJ_RequestKiosk::session()) json_error('End the request kiosk before signing in on this device.', 403);
+    }
     $email = $input['email'] ?? '';
     $password = $input['password'] ?? '';
     try {
@@ -1297,17 +1302,42 @@ function music_school_event(array $event): bool {
         || in_array(strtolower($event['type'] ?? ''), ['prom', 'homecoming'], true);
 }
 
-if (preg_match('#^music/([a-f0-9]{64})$#', $path, $m)) {
+if (preg_match('#^admin/events/([a-f0-9-]+)/music/kiosks$#', $path, $m) && $method === 'POST') {
+    require_db();
+    $admin = require_admin();
+    DJ_RequestKiosk::install();
+    DJ_RequestKiosk::admin($m[1], $input, $admin);
+}
+
+if (strncmp($path, 'kiosk/', 6) === 0) {
+    if (($_SERVER['HTTP_X_DJ_KIOSK'] ?? '') !== '1') json_error('Open the request kiosk page.', 403);
+    require_db();
+    DJ_RequestKiosk::install();
+    if ($path === 'kiosk/status' && $method === 'GET') DJ_RequestKiosk::status();
+    if ($path === 'kiosk/pair' && $method === 'POST') {
+        if ($protocol !== 'https://') json_error('The request kiosk requires HTTPS.', 403);
+        DJ_RequestKiosk::pair($input);
+    }
+    if ($path === 'kiosk/exit' && $method === 'POST') DJ_RequestKiosk::exit($input);
+    if ($path !== 'kiosk/requests' || $method !== 'POST') json_error('Unsupported kiosk request.', 405);
+}
+
+$fromKiosk = $path === 'kiosk/requests';
+if ($fromKiosk || preg_match('#^music/([a-f0-9]{64})$#', $path, $m)) {
     require_db();
     ensure_music_options();
-    $token = $m[1];
+    $kiosk = $fromKiosk ? DJ_RequestKiosk::session() : null;
+    if ($fromKiosk && !DJ_RequestKiosk::usable($kiosk)) json_error('This kiosk is unavailable.', 423);
+    $token = $fromKiosk ? null : $m[1];
     $settings_table = DJ_Database::get_table_name('music_request_settings');
     $requests_table = DJ_Database::get_table_name('music_requests');
     $blocks_table = DJ_Database::get_table_name('music_request_blocks');
     $votes_table = DJ_Database::get_table_name('music_request_votes');
     $options_table = DJ_Database::get_table_name('music_request_options');
 
-    $s = DJ_Database::get_row("SELECT * FROM $settings_table WHERE token = ?", [$token]);
+    $s = $fromKiosk
+        ? DJ_Database::get_row("SELECT * FROM $settings_table WHERE event_id = ?", [$kiosk['event_id']])
+        : DJ_Database::get_row("SELECT * FROM $settings_table WHERE token = ?", [$token]);
     $event = $s ? DJ_Database::get_event($s['event_id']) : null;
     if (!$event) json_error('Song request link not available or event not found', 404);
     $eventId = $s['event_id'];
@@ -1349,20 +1379,24 @@ if (preg_match('#^music/([a-f0-9]{64})$#', $path, $m)) {
     $title = trim(is_string($input['title'] ?? null) ? $input['title'] : '');
     $artist = trim(is_string($input['artist'] ?? null) ? $input['artist'] : '');
     $key = $input['key'] ?? '';
-    $voteFor = is_string($input['voteFor'] ?? null) ? $input['voteFor'] : '';
+    $voteFor = !$fromKiosk && is_string($input['voteFor'] ?? null) ? $input['voteFor'] : '';
     if ($title === '' || $artist === '' || mb_strlen($title) > 160 || mb_strlen($artist) > 160) {
         json_error('Enter a song title and artist, up to 160 characters each.', 400);
     }
-    if (!$deviceHash || !is_string($key) || !preg_match('/^[a-zA-Z0-9-]{16,64}$/D', $key)) {
+    if ((!$fromKiosk && !$deviceHash) || !is_string($key) || !preg_match('/^[a-zA-Z0-9-]{16,64}$/D', $key)) {
         json_error('Reload the event link and try again.', 400);
+    }
+    if ($fromKiosk) {
+        // A fresh submission represents a new student. Retries keep the same key.
+        $key = hash('sha256', 'kiosk:' . $kiosk['id'] . ':' . $key);
+        $deviceHash = hash('sha256', 'kiosk-submission:' . $key);
     }
 
     $pdo = DJ_Database::pdo();
     $pdo->beginTransaction();
     try {
         // Serialize event writes so paired submissions cannot create two active copies.
-        DJ_Database::query("UPDATE $settings_table SET version = version WHERE event_id = ?", [$eventId]);
-        $current = DJ_Database::get_row("SELECT token, enabled FROM $settings_table WHERE event_id = ?", [$eventId]);
+        $current = DJ_RequestKiosk::lockEvent($eventId);
         $fail = static function(string $message, int $code) use ($pdo) {
             $pdo->rollBack();
             json_error($message, $code);
@@ -1371,7 +1405,15 @@ if (preg_match('#^music/([a-f0-9]{64})$#', $path, $m)) {
             $pdo->commit();
             json_response(['ok' => true, 'reference' => $id, 'consolidated' => $consolidated, 'disclaimer' => $disclaimer]);
         };
-        if (!$current || $current['token'] !== $token) $fail('Scan the latest event QR code.', 404);
+        if ($fromKiosk) {
+            $locked = DJ_RequestKiosk::session(true);
+            if (!DJ_RequestKiosk::usable($locked) || $locked['id'] !== $kiosk['id']
+                || !DJ_RequestKiosk::open(DJ_Database::get_event($eventId), $current)) {
+                $fail('This kiosk is unavailable.', 423);
+            }
+        } elseif (!$current || $current['token'] !== $token) {
+            $fail('Scan the latest event QR code.', 404);
+        }
         $existing = DJ_Database::get_var(
             "SELECT id FROM $requests_table WHERE event_id = ? AND submission_key = ? AND device_hash = ?",
             [$eventId, $key, $deviceHash]
@@ -1408,22 +1450,28 @@ if (preg_match('#^music/([a-f0-9]{64})$#', $path, $m)) {
             "SELECT 1 FROM $votes_table WHERE request_id = ? AND device_hash = ?", [$match['id'], $deviceHash]
         ))) $finish($match['id'], true);
 
-        $recent = DJ_Database::get_col(
+        if (!$fromKiosk) {
+            $recent = DJ_Database::get_col(
             "SELECT created_at FROM $requests_table WHERE event_id = ? AND device_hash = ? AND created_at >= ?
              UNION ALL SELECT created_at FROM $votes_table WHERE event_id = ? AND device_hash = ? AND created_at >= ?",
             [$eventId, $deviceHash, gmdate('Y-m-d H:i:s', time() - 3600),
              $eventId, $deviceHash, gmdate('Y-m-d H:i:s', time() - 3600)]
-        );
-        $cooldown = (int)($config['security']['rate_limit_seconds'] ?? 15);
-        if ($cooldown < 1) $cooldown = 15;
-        if ($recent) {
-            $left = $cooldown - (time() - strtotime(max($recent) . ' UTC'));
-            if ($left > 0) $fail("Please wait $left seconds before sending another song.", 429);
+            );
+            $cooldown = (int)($config['security']['rate_limit_seconds'] ?? 15);
+            if ($cooldown < 1) $cooldown = 15;
+            if ($recent) {
+                $left = $cooldown - (time() - strtotime(max($recent) . ' UTC'));
+                if ($left > 0) $fail("Please wait $left seconds before sending another song.", 429);
+            }
+            $hourlyMax = (int)($config['security']['max_requests_hour'] ?? 30);
+            if ($hourlyMax > 0 && count($recent) >= $hourlyMax) $fail('Hourly song request limit reached for this device.', 429);
         }
-        $hourlyMax = (int)($config['security']['max_requests_hour'] ?? 30);
-        if ($hourlyMax > 0 && count($recent) >= $hourlyMax) $fail('Hourly song request limit reached for this device.', 429);
 
         $now = DJ_Database::now();
+        $reqId = $match['id'] ?? DJ_Database::uuid();
+        if ($fromKiosk) {
+            DJ_Database::insert(DJ_RequestKiosk::sources(), ['request_id' => $reqId, 'submission_key' => $key]);
+        }
         if ($match) {
             DJ_Database::insert($votes_table, [
                 'event_id' => $eventId, 'request_id' => $match['id'], 'device_hash' => $deviceHash,
@@ -1431,7 +1479,6 @@ if (preg_match('#^music/([a-f0-9]{64})$#', $path, $m)) {
             ]);
             $finish($match['id'], true);
         }
-        $reqId = DJ_Database::uuid();
         DJ_Database::insert($requests_table, [
             'id' => $reqId, 'event_id' => $eventId, 'submission_key' => $key,
             'title' => $title, 'artist' => $artist, 'status' => 'Pending', 'version' => 1,
@@ -1487,6 +1534,7 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music$#', $path, $m)) {
     $blocks_table = DJ_Database::get_table_name('music_request_blocks');
 
     ensure_music_options();
+    DJ_RequestKiosk::install();
     $s = DJ_Database::get_row("SELECT * FROM $settings_table WHERE event_id = ?", [$id]);
 
     $options_table = DJ_Database::get_table_name('music_request_options');
@@ -1516,11 +1564,18 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music$#', $path, $m)) {
             $enabled = ($action === 'open') ? 1 : (($action === 'pause') ? 0 : ($s['enabled'] ?? 1));
 
             if ($s) {
+                $pdo = DJ_Database::pdo();
+                $pdo->beginTransaction();
                 if (!DJ_Database::update($settings_table, [
                     'token' => $token,
                     'enabled' => $enabled,
                     'version' => (int)$s['version'] + 1
-                ], ['event_id' => $id, 'version' => $s['version']])) json_error('Settings changed. Check the latest state and retry.', 409);
+                ], ['event_id' => $id, 'version' => $s['version']])) {
+                    $pdo->rollBack();
+                    json_error('Settings changed. Check the latest state and retry.', 409);
+                }
+                if ($action === 'pause') DJ_RequestKiosk::revokeEvent($id);
+                $pdo->commit();
             } else {
                 DJ_Database::insert($settings_table, [
                     'event_id' => $id,
@@ -1544,7 +1599,9 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music$#', $path, $m)) {
 
     // Get all requests
     $reqRows = DJ_Database::get_results(
-        "SELECT r.*, 
+        "SELECT r.*,
+                (SELECT COUNT(*) FROM " . DJ_RequestKiosk::sources() . " k WHERE k.request_id = r.id) AS kiosk_count,
+                EXISTS(SELECT 1 FROM " . DJ_RequestKiosk::sources() . " k WHERE k.request_id = r.id AND k.submission_key = r.submission_key) AS kiosk_origin,
                 (SELECT COUNT(*) FROM " . DJ_Database::get_table_name('music_request_votes') . " v WHERE v.request_id = r.id) AS votes,
                 EXISTS(SELECT 1 FROM $blocks_table b WHERE b.event_id = r.event_id AND b.device_hash = r.device_hash AND b.blocked = 1) as requesterBlocked
          FROM $requests_table r 
@@ -1566,7 +1623,9 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music$#', $path, $m)) {
             'createdAt' => $r['created_at'],
             'updatedAt' => $r['updated_at'],
             'requesterBlocked' => !empty($r['requesterBlocked']),
-            'votes' => (int)$r['votes']
+            'votes' => (int)$r['votes'],
+            'kioskCount' => (int)$r['kiosk_count'],
+            'kioskOrigin' => (bool)$r['kiosk_origin']
         ];
     }
 
@@ -1584,6 +1643,7 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music$#', $path, $m)) {
             'version' => (int)($s['version'] ?? 1)
         ],
         'requests' => $requests,
+        'kiosks' => DJ_RequestKiosk::summaries($id),
         'counts' => $counts
     ]);
 }
@@ -1594,6 +1654,7 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
     $id = $m[1];
     if ($method !== 'PUT') json_error('Method not allowed', 405);
     ensure_music_options();
+    DJ_RequestKiosk::install();
     $requestId = $m[2];
     $requests_table = DJ_Database::get_table_name('music_requests');
     $blocks_table = DJ_Database::get_table_name('music_request_blocks');
@@ -1606,6 +1667,10 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
     $actorId = $session['user']['email'] ?? 'admin';
 
     if (isset($input['action']) && in_array($input['action'], ['block', 'unblock'])) {
+        $kioskSources = DJ_RequestKiosk::sources();
+        if (DJ_Database::get_var("SELECT 1 FROM $kioskSources WHERE request_id = ? AND submission_key = ?", [$requestId, $row['submission_key']])) {
+            json_error('Use the kiosk controls to pause or revoke a kiosk.', 409);
+        }
         $blocked = ($input['action'] === 'block') ? 1 : 0;
         DJ_Database::replace($blocks_table, [
             'event_id' => $id,
@@ -1654,7 +1719,9 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
     ];
 
     $reqRows = DJ_Database::get_results(
-        "SELECT r.*, 
+        "SELECT r.*,
+                (SELECT COUNT(*) FROM " . DJ_RequestKiosk::sources() . " k WHERE k.request_id = r.id) AS kiosk_count,
+                EXISTS(SELECT 1 FROM " . DJ_RequestKiosk::sources() . " k WHERE k.request_id = r.id AND k.submission_key = r.submission_key) AS kiosk_origin,
                 (SELECT COUNT(*) FROM " . DJ_Database::get_table_name('music_request_votes') . " v WHERE v.request_id = r.id) AS votes,
                 EXISTS(SELECT 1 FROM $blocks_table b WHERE b.event_id = r.event_id AND b.device_hash = r.device_hash AND b.blocked = 1) as requesterBlocked
          FROM $requests_table r 
@@ -1676,7 +1743,9 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/music/requests/([a-f0-9-]+)$#', $pat
             'createdAt' => $r['created_at'],
             'updatedAt' => $r['updated_at'],
             'requesterBlocked' => !empty($r['requesterBlocked']),
-            'votes' => (int)$r['votes']
+            'votes' => (int)$r['votes'],
+            'kioskCount' => (int)$r['kiosk_count'],
+            'kioskOrigin' => (bool)$r['kiosk_origin']
         ];
     }
 

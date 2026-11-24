@@ -265,12 +265,17 @@ export function musicUI({api, app, head, esc, date, message}) {
                     <div class="music-booth-controls">
                         <button type="button" data-pause></button>
                         <button type="button" class="secondary" data-qr>Show guest QR</button>
+                        <button type="button" class="secondary" data-launch-kiosk>Launch Request Kiosk</button>
                         <button type="button" class="secondary" data-sort-votes aria-pressed="false">Sort incoming by votes</button>
                         <button type="button" class="secondary" data-fullscreen>Full screen</button>
                     </div>
                     <div class="music-undo"><span data-action-feedback role="status"></span>
                         <button type="button" class="secondary" data-undo hidden>Undo</button></div>
                 </div>
+                <section class="card" data-kiosk-panel hidden aria-labelledby="kiosk-devices-title">
+                    <h2 id="kiosk-devices-title">Request kiosks</h2>
+                    <div data-kiosks></div>
+                </section>
                 <div class="music-booth-queues">
                     <section class="card" aria-labelledby="incoming-title"><h2 id="incoming-title">Incoming <span data-count="Pending"></span></h2><div data-queue="Pending"></div></section>
                     <section class="card" aria-labelledby="approved-title"><h2 id="approved-title">Approved <span data-count="Approved"></span></h2><div data-queue="Approved"></div></section>
@@ -285,6 +290,26 @@ export function musicUI({api, app, head, esc, date, message}) {
                     <p>Scan to request a song</p><div data-qr-content></div>
                     <form method="dialog"><button type="submit" class="secondary">Close QR</button></form>
                 </dialog>
+                <dialog class="music-qr-dialog" data-kiosk-dialog aria-labelledby="kiosk-launch-title">
+                    <h2 id="kiosk-launch-title">Launch Request Kiosk</h2>
+                    <form data-kiosk-setup>
+                        <label>Kiosk exit PIN
+                            <input type="password" name="pin" required inputmode="numeric" pattern="[0-9]{6,12}" maxlength="12" autocomplete="new-password">
+                        </label>
+                        <p>Use 6 to 12 digits. The PIN ends the kiosk session and returns to DJ Desk sign-in.</p>
+                        <button type="submit">Create pairing code</button>
+                    </form>
+                    <div data-kiosk-pair hidden>
+                        <p>Pair within five minutes. On the iPad, open the kiosk from its Home Screen icon and enter this single-use code.</p>
+                        <label>Kiosk page<input data-kiosk-url readonly></label>
+                        <label>Pairing code<input data-kiosk-code readonly></label>
+                        <button type="button" class="secondary" data-copy-code>Copy pairing code</button>
+                        <p>Pairing on this device signs it out of DJ Desk. Keep a separate device signed in for remote controls.</p>
+                        <a class="button" data-kiosk-launch>Start kiosk on this device</a>
+                    </div>
+                    <p data-kiosk-feedback role="status"></p>
+                    <form method="dialog"><button type="submit" class="secondary">Close</button></form>
+                </dialog>
             </section>`;
         const booth = app.querySelector('.music-booth');
         const find = selector => booth.querySelector(selector);
@@ -292,6 +317,39 @@ export function musicUI({api, app, head, esc, date, message}) {
         const undoButton = find('[data-undo]');
         const feedback = find('[data-action-feedback]');
         const connection = find('[data-connection]');
+        const kioskDialog = find('[data-kiosk-dialog]');
+        const kioskSetup = find('[data-kiosk-setup]');
+        const kioskPair = find('[data-kiosk-pair]');
+        const kioskFeedback = find('[data-kiosk-feedback]');
+        const kioskUrl = new URL('./kiosk.html', location.href);
+        let previousKiosks;
+
+        function renderKiosks() {
+            const kiosks = data.kiosks || [];
+            const serialized = JSON.stringify(kiosks.map(({id, state, connected, lastSeen}) => [id, state, connected, connected ? null : lastSeen]));
+            if (serialized === previousKiosks) return;
+            previousKiosks = serialized;
+            find('[data-kiosk-panel]').hidden = !kiosks.length;
+            const list = find('[data-kiosks]');
+            const focused = list.contains(document.activeElement) ? document.activeElement : null;
+            list.innerHTML = kiosks.map(kiosk => {
+                const status = kiosk.state === 'pairing' ? 'Waiting for pairing'
+                    : (kiosk.state === 'paused' ? 'Paused' : 'Accepting requests') + ' · '
+                    + (kiosk.connected ? 'Connected' : 'Offline');
+                const lastSeen = !kiosk.connected && kiosk.lastSeen ? ' · Last seen ' + new Date(kiosk.lastSeen * 1000).toLocaleTimeString() : '';
+                const controls = kiosk.state === 'pairing' ? '' : '<button type="button" class="secondary" data-kiosk-action="'
+                    + (kiosk.state === 'paused' ? 'resume">Resume' : 'pause">Pause') + '</button> ';
+                return '<div class="event" data-kiosk-id="' + esc(kiosk.id) + '"><p>Kiosk ' + esc(kiosk.id.slice(0, 8))
+                    + ' · ' + status + esc(lastSeen) + '</p><div>' + controls
+                    + '<button type="button" class="secondary" data-kiosk-action="revoke">Revoke</button></div></div>';
+            }).join('');
+            if (focused) {
+                const kioskId = focused.closest('[data-kiosk-id]')?.dataset.kioskId;
+                const row = [...list.children].find(item => item.dataset.kioskId === kioskId);
+                (row?.querySelector('[data-kiosk-action="' + focused.dataset.kioskAction + '"]')
+                    || row?.querySelector('button') || find('[data-launch-kiosk]')).focus();
+            }
+        }
         function renderConfig() {
             const serialized = JSON.stringify(data.config);
             if (serialized === previousConfig) return;
@@ -299,6 +357,7 @@ export function musicUI({api, app, head, esc, date, message}) {
             const {enabled, url, version} = data.config;
             pause.textContent = enabled ? 'Pause requests' : 'Open requests';
             pause.setAttribute('aria-pressed', String(!enabled));
+            find('[data-launch-kiosk]').disabled = !enabled;
             find('[data-qr]').disabled = !url;
             find('[data-rotate]').hidden = !url;
             const preferences = find('[data-preferences]');
@@ -317,6 +376,9 @@ export function musicUI({api, app, head, esc, date, message}) {
             + '"' + (secondary ? ' class="secondary"' : '') + '>' + label + '</button>';
         function songCard(song) {
             const support = Number(song.votes || 0) + 1;
+            const kioskCount = Number(song.kioskCount || 0);
+            const sources = [kioskCount ? 'Kiosk ' + kioskCount : '', support > kioskCount ? 'Personal device ' + (support - kioskCount) : '']
+                .filter(Boolean).join(' · ');
             const controls = {
                 Pending: action('Approved', 'Approve') + action('Denied', 'Deny', true),
                 Approved: action('Played', 'Mark played') + action('Pending', 'Return to incoming', true),
@@ -325,12 +387,14 @@ export function musicUI({api, app, head, esc, date, message}) {
             };
             return '<article class="music-booth-song" data-song="' + esc(song.id) + '"><div><h3>' + esc(song.title) + '</h3><p>'
                 + esc(song.artist) + '</p><small>' + support + (support === 1 ? ' request' : ' requests & votes')
+                + ' · ' + sources
                 + (song.requesterBlocked ? ' · Requester blocked' : '') + '</small></div><div class="music-song-actions">'
-                + controls[song.status] + '<button type="button" class="secondary" data-block>'
-                + (song.requesterBlocked ? 'Unblock requester' : 'Block requester') + '</button></div></article>';
+                + controls[song.status] + (song.kioskOrigin ? '' : '<button type="button" class="secondary" data-block>'
+                + (song.requesterBlocked ? 'Unblock requester' : 'Block requester') + '</button>') + '</div></article>';
         }
         function render() {
             renderConfig();
+            renderKiosks();
             const serialized = JSON.stringify([data.requests, data.counts, sortByVotes]);
             if (serialized === previousRows) return;
             previousRows = serialized;
@@ -440,6 +504,60 @@ export function musicUI({api, app, head, esc, date, message}) {
             if (current()) data = result;
         }
         pause.onclick = () => void mutate(pause, () => updateSettings(data.config.enabled ? 'pause' : 'open'));
+        find('[data-launch-kiosk]').onclick = () => {
+            kioskSetup.reset();
+            kioskSetup.hidden = false;
+            kioskPair.hidden = true;
+            find('[data-kiosk-code]').value = '';
+            find('[data-kiosk-launch]').removeAttribute('href');
+            kioskFeedback.textContent = '';
+            kioskDialog.showModal();
+        };
+        kioskDialog.addEventListener('close', () => {
+            kioskSetup.reset();
+            find('[data-kiosk-code]').value = '';
+            find('[data-kiosk-launch]').removeAttribute('href');
+        });
+        kioskSetup.addEventListener('submit', event => {
+            event.preventDefault();
+            const pin = kioskSetup.elements.pin.value;
+            kioskSetup.reset();
+            const button = kioskSetup.querySelector('button');
+            void mutate(button, async () => {
+                const {code} = await api(path + '/kiosks', 'POST', {action: 'launch', pin});
+                if (!current()) return;
+                if (kioskDialog.open) {
+                    find('[data-kiosk-url]').value = kioskUrl.href;
+                    find('[data-kiosk-code]').value = code;
+                    find('[data-kiosk-launch]').href = kioskUrl.href + '#pair=' + code;
+                    kioskSetup.hidden = true;
+                    kioskPair.hidden = false;
+                    find('[data-kiosk-code]').focus();
+                }
+                data = await api(path);
+            });
+        });
+        find('[data-copy-code]').onclick = async () => {
+            const field = find('[data-kiosk-code]');
+            try {
+                await navigator.clipboard.writeText(field.value);
+                kioskFeedback.textContent = 'Pairing code copied.';
+            } catch {
+                field.select();
+                kioskFeedback.textContent = 'Copy the selected pairing code.';
+            }
+        };
+        find('[data-kiosks]').onclick = event => {
+            const button = event.target.closest('[data-kiosk-action]');
+            if (!button) return;
+            const action = button.dataset.kioskAction;
+            if (action === 'revoke' && !confirm('Revoke this kiosk? It will need a new pairing code.')) return;
+            const kioskId = button.closest('[data-kiosk-id]').dataset.kioskId;
+            void mutate(button, async () => {
+                await api(path + '/kiosks', 'POST', {action, id: kioskId});
+                if (current()) data = await api(path);
+            });
+        };
         const preferences = find('[data-preferences]');
         preferences.onclick = () => void mutate(preferences, () => updateSettings('preferences', {showApproved: !data.config.showApproved}));
         const rotate = find('[data-rotate]');

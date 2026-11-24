@@ -541,6 +541,7 @@ class DJ_Database {
         $tables = [
             'events', 'clients', 'booking_requests', 'booking_workflows',
             'music_request_settings', 'music_requests', 'music_request_blocks', 'music_request_history',
+            'music_kiosks', 'music_kiosk_submissions',
             'contracts', 'signatures', 'portal_plans', 'followup_settings', 'followup_drafts',
             'stripe_invoices', 'stripe_receipts', 'invitations', 'memberships', 'contract_memberships'
         ];
@@ -1353,11 +1354,26 @@ class DJ_Database {
         $body['paid'] = (float)($body['paid'] ?? 0);
 
         if ($old) {
-            $newVersion = (int)$old['version'] + 1;
-            self::update($events_table, [
-                'body' => json_encode($body),
-                'version' => $newVersion
-            ], ['id' => $id]);
+            $closing = in_array($body['status'] ?? '', ['Canceled', 'Archived', 'Completed'], true);
+            if ($closing) {
+                require_once __DIR__ . '/RequestKiosk.php';
+                DJ_RequestKiosk::install();
+                self::pdo()->beginTransaction();
+            }
+            try {
+                if ($closing) {
+                    DJ_RequestKiosk::lockEvent($id);
+                    DJ_RequestKiosk::revokeEvent($id);
+                }
+                self::update($events_table, [
+                    'body' => json_encode($body),
+                    'version' => (int)$old['version'] + 1
+                ], ['id' => $id]);
+                if ($closing) self::pdo()->commit();
+            } catch (Throwable $error) {
+                if ($closing && self::pdo()->inTransaction()) self::pdo()->rollBack();
+                throw $error;
+            }
         } else {
             self::insert($events_table, [
                 'id' => $eventId,

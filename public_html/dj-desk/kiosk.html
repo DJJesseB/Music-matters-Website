@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#141020">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; manifest-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+    <title>Request Kiosk · DJ Jesse B</title>
+    <link rel="manifest" href="./kiosk.webmanifest">
+    <link rel="stylesheet" href="./kiosk.css?v=1">
+    <script type="module" src="./kiosk.js?v=1"></script>
+</head>
+<body>
+    <header><span>DJ JESSE B</span><button type="button" id="exit" hidden>Admin exit</button></header>
+    <main>
+        <p id="connection" role="status">Connecting…</p>
+        <h1 id="heading" tabindex="-1">Song requests</h1>
+        <p id="notice" role="status"></p>
+        <form id="pair" hidden>
+            <label>Pairing code<input name="code" required maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+            <button type="submit">Pair kiosk</button>
+        </form>
+        <form id="request" hidden autocomplete="off">
+            <label>Song title<input name="title" required maxlength="160" enterkeyhint="next"></label>
+            <label>Artist<input name="artist" required maxlength="160" enterkeyhint="send"></label>
+            <button type="submit">Send request</button>
+            <p>Requests are subject to DJ approval. <span id="school" hidden>Clean edits only.</span></p>
+        </form>
+        <section id="confirmation" hidden>
+            <p>Your song is in the DJ’s request queue. Thanks!</p>
+            <button type="button" id="next">Next request</button>
+        </section>
+        <a id="signin" href="./" hidden>Return to DJ Desk sign-in</a>
+    </main>
+    <dialog id="exit-dialog" aria-labelledby="exit-title">
+        <form id="exit-form">
+            <h2 id="exit-title">Exit kiosk</h2>
+            <label>Kiosk exit PIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6,12}" required maxlength="12" autocomplete="off"></label>
+            <p id="exit-error" role="status"></p>
+            <div class="buttons">
+                <button type="submit">Exit kiosk</button>
+                <button type="button" id="re-pair" hidden>Pair again</button>
+                <button type="button" id="cancel">Cancel</button>
+            </div>
+        </form>
+    </dialog>
+</body>
+</html>

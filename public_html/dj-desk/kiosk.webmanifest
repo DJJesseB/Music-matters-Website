@@ -1,0 +1,10 @@
+{
+    "id": "./kiosk.html",
+    "name": "DJ Jesse B Request Kiosk",
+    "short_name": "Request Kiosk",
+    "start_url": "./kiosk.html",
+    "scope": "./",
+    "display": "standalone",
+    "background_color": "#141020",
+    "theme_color": "#141020"
+}
