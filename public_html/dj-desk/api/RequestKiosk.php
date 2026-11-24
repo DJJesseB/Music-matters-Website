@@ -116,12 +116,7 @@ final class DJ_RequestKiosk {
                 json_error('Open event requests first.', 409);
             }
             if ($action === 'launch') {
-                $pair = bin2hex(random_bytes(32));
-                DJ_Database::insert($table, [
-                    'id' => DJ_Database::uuid(), 'event_id' => $id, 'pair_hash' => hash('sha256', $pair),
-                    'pin_hash' => $pinHash, 'state' => 'pairing', 'pair_until' => time() + 300,
-                    'expires_at' => time() + 43200, 'created_at' => time()
-                ]);
+                $pair = self::createPairingCode($id, $pinHash);
                 $pdo->commit();
                 json_response(['code' => $pair], 201);
             }
@@ -143,16 +138,64 @@ final class DJ_RequestKiosk {
         }
     }
 
+    private static function createPairingCode(string $eventId, string $pinHash): string {
+        $table = self::table();
+        $now = time();
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            $code = sprintf('%06d', random_int(0, 999999));
+            $hash = hash('sha256', $code);
+            // Keep used codes reserved through their original pairing window.
+            DJ_Database::query("UPDATE $table SET pair_hash = ? WHERE pair_hash = ? AND pair_until <= ?",
+                [bin2hex(random_bytes(32)), $hash, $now]);
+            try {
+                DJ_Database::insert($table, [
+                    'id' => DJ_Database::uuid(), 'event_id' => $eventId, 'pair_hash' => $hash,
+                    'pin_hash' => $pinHash, 'state' => 'pairing', 'pair_until' => $now + 300,
+                    'expires_at' => $now + 43200, 'created_at' => $now
+                ]);
+                return $code;
+            } catch (PDOException $error) {
+                if ((string)$error->getCode() !== '23000') throw $error;
+            }
+        }
+        throw new RuntimeException('Could not reserve a pairing code. Try again.');
+    }
+
+    private static function limitPairingAttempts(): void {
+        $table = DJ_Database::get_table_name('music_kiosk_pair_rate');
+        $pdo = DJ_Database::pdo();
+        $mysql = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+        $options = $mysql ? ' ENGINE=InnoDB' : '';
+        $pdo->exec("CREATE TABLE IF NOT EXISTS $table (
+            id integer NOT NULL PRIMARY KEY,
+            window_minute bigint NOT NULL,
+            attempts integer NOT NULL
+        )$options");
+        $insert = $mysql ? 'INSERT IGNORE' : 'INSERT OR IGNORE';
+        $pdo->exec("$insert INTO $table (id, window_minute, attempts) VALUES (1, 0, 0)");
+        $minute = intdiv(time(), 60);
+        $allowed = DJ_Database::query(
+            "UPDATE $table SET attempts = CASE WHEN window_minute = ? THEN attempts + 1 ELSE 1 END,
+                window_minute = ? WHERE id = 1 AND (window_minute < ? OR (window_minute = ? AND attempts < 20))",
+            [$minute, $minute, $minute, $minute]
+        )->rowCount();
+        if (!$allowed) {
+            header('Retry-After: ' . (60 - time() % 60));
+            json_error('Too many pairing attempts. Wait a minute and try again.', 429);
+        }
+    }
+
     public static function pair(array $input): void {
         $code = $input['code'] ?? '';
-        if (!self::credential($code)) json_error('Enter the pairing code from the request desk.');
+        if (!is_string($code) || !preg_match('/^[0-9]{6}$/D', $code)) json_error('Enter the six-digit pairing code from the request desk.');
+        self::limitPairingAttempts();
         $existing = self::session();
         if ($existing && (int)$existing['expires_at'] > time() && $existing['state'] !== 'revoked') {
             json_error('Exit or revoke the existing kiosk before pairing another event.', 409);
         }
         $table = self::table();
         $hash = hash('sha256', $code);
-        $target = DJ_Database::get_row("SELECT event_id FROM $table WHERE pair_hash = ?", [$hash]);
+        $target = DJ_Database::get_row("SELECT id, event_id FROM $table WHERE pair_hash = ? AND state = 'pairing' AND pair_until > ?", [$hash, time()]);
         if (!$target) json_error('This pairing code is invalid or expired.', 410);
         $pdo = DJ_Database::pdo();
         $pdo->beginTransaction();
@@ -166,8 +209,8 @@ final class DJ_RequestKiosk {
             $token = bin2hex(random_bytes(32));
             $changed = DJ_Database::query(
                 "UPDATE $table SET token_hash = ?, state = 'active', last_seen = ?
-                 WHERE pair_hash = ? AND state = 'pairing' AND pair_until > ? AND expires_at > ?",
-                [hash('sha256', $token), time(), $hash, time(), time()]
+                 WHERE id = ? AND pair_hash = ? AND state = 'pairing' AND pair_until > ? AND expires_at > ?",
+                [hash('sha256', $token), time(), $target['id'], $hash, time(), time()]
             )->rowCount();
             if (!$changed) {
                 $pdo->rollBack();

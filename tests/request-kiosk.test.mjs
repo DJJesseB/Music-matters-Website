@@ -91,6 +91,10 @@ test('request kiosk and existing guest and DJ flows', async () => {
         await call('kiosk/requests', {kiosk: true, body: submit('Unpaired'), expect: 423});
 
         const {result: {code}} = await launch();
+        assert.match(code, /^[0-9]{6}$/);
+        for (const invalid of ['12345', '1234567', 123456, '12a456']) {
+            await call('kiosk/pair', {kiosk: true, body: {code: invalid}, expect: 400});
+        }
         const sameDevice = await call('auth/login', {body: adminCredentials});
         const oldAdminCookie = sameDevice.cookies[0].split(';')[0];
         const paired = await call('kiosk/pair', {kiosk: true, cookie: oldAdminCookie, body: {code}});
@@ -225,6 +229,10 @@ test('request kiosk and existing guest and DJ flows', async () => {
                 await browser.close();
             }
         }
+        execFileSync(php, [...phpOptions, '-r',
+            "require 'api/Database.php'; DJ_Database::init(require 'config.php'); DJ_Database::update('dj_music_kiosk_pair_rate', ['window_minute' => intdiv(time(), 60), 'attempts' => 20], ['id' => 1]);"
+        ], {cwd: app});
+        await call('kiosk/pair', {kiosk: true, body: {code}, expect: 429});
     } catch (error) {
         if (serverLog) error.message += '\n' + serverLog;
         throw error;

@@ -139,7 +139,7 @@ Log in using the administrator credentials configured in `config.php`:
 
 ## Request Kiosk on iPad
 
-1. On a staff device, open the event’s **Live Request Desk**, open requests, and choose **Launch Request Kiosk**. Set a 6–12 digit exit PIN and keep it with staff. Pairing codes are single-use and last five minutes.
+1. On a staff device, open the event’s **Live Request Desk**, open requests, and choose **Launch Request Kiosk**. Set a 6–12 digit exit PIN and keep it with staff. The six-digit pairing code is single-use and lasts five minutes.
 2. On the iPad, open the kiosk page shown in the launch panel in Safari. Tap **Share**, **Add to Home Screen**, and enable **Open as Web App** if shown. Open the new Home Screen icon and paste the pairing code there. Pair from inside the Home Screen web app so it can keep its own session. [Apple’s Home Screen instructions](https://support.apple.com/en-ca/guide/ipad/ipad8f1f7a29/ipados)
 3. In **Settings → Accessibility → Guided Access**, enable Guided Access and set a separate device passcode. With the kiosk open, triple-click the top or Home button, select **Guided Access** if prompted, and tap **Start**. Leave touch and the software keyboard enabled. The web app handles its own PIN exit. Guided Access is what locks iPadOS to the app. [Apple’s Guided Access instructions](https://support.apple.com/en-us/111795)
 4. Keep DJ Desk open on the staff device. Under **Request kiosks**, you can see whether the iPad has checked in recently and pause, resume, or revoke it. Use **Pause requests** to close requests for the whole event and end all its kiosk sessions. A completed, canceled, or archived event also ends its kiosk sessions. Opening requests again requires a fresh kiosk pairing.

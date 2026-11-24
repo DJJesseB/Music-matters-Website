@@ -21,7 +21,7 @@
         <h1 id="heading" tabindex="-1">Song requests</h1>
         <p id="notice" role="status"></p>
         <form id="pair" hidden>
-            <label>Pairing code<input name="code" required maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+            <label>Six-digit pairing code<input name="code" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off"></label>
             <button type="submit">Pair kiosk</button>
         </form>
         <form id="request" hidden autocomplete="off">

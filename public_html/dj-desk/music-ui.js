@@ -311,7 +311,7 @@ export function musicUI({api, app, head, esc, date, message}) {
                         <button type="submit">Create pairing code</button>
                     </form>
                     <div data-kiosk-pair hidden>
-                        <p>Pair within five minutes. On the iPad, open the kiosk from its Home Screen icon and enter this single-use code.</p>
+                        <p>On the iPad, open the kiosk from its Home Screen icon and enter this single-use, six-digit code within five minutes.</p>
                         <label>Kiosk page<input data-kiosk-url readonly></label>
                         <label>Pairing code<input data-kiosk-code readonly></label>
                         <button type="button" class="secondary" data-copy-code>Copy pairing code</button>
