@@ -35,4 +35,5 @@ export function mountCalendarSettings({api,esc,message}) {
     button('calendarDisconnect',async()=>{if(!confirm('Disconnect Google Calendar? Existing entries will stay in your calendar.'))return;try{await api('admin/google-calendar/disconnect','POST',{});state.status=await api('admin/google-calendar/status');state.calendars=[];render('Disconnected. Existing calendar entries remain.');}catch(e){message(e.message,true);}});
   };
   const apiBaseUrl=()=>{const p=window.location.pathname;return p.substring(0,p.lastIndexOf('/')+1)+'api/';};
-  (async()=>{try{state.status=await api('admin/google-calendar/status');if(state.status.connected)state.calendars=await api('admin/google-calendar/calendars');render();}catch(e){root.innerHTML=`<section class="card"><h2>Google Calendar Integration</h2><p>${safe(e.message)}</p></sectio
+  (async()=>{try{state.status=await api('admin/google-calendar/status');if(state.status.connected)state.calendars=await api('admin/google-calendar/calendars');render();}catch(e){root.innerHTML=`<section class="card"><h2>Google Calendar Integration</h2><p>${safe(e.message)}</p></section>`;}})();
+}
