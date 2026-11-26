@@ -19,7 +19,7 @@ final class DJ_GoogleCalendar {
             DJ_Database::insert(self::table('settings'), ['environment'=>$env,'calendar_id'=>'','calendar_name'=>'','setup_buffer'=>60,'breakdown_buffer'=>30,'timezone'=>'America/New_York','enabled'=>1,'last_synced_at'=>'','last_error'=>'']);
         }
     }
-    private static function configPath(): string { return dirname(__DIR__) . '/config-google-calendar.php'; }
+    private static function configPath(): string { return dirname(__DIR__) . '/data/google-calendar-secrets.php'; }
     private static function config(): array {
         $path=self::configPath();
         if (!is_file($path)) return [];
