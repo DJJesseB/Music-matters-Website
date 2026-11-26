@@ -4,7 +4,7 @@
 DirectoryIndex index.php index.html
 
 # Prevent direct web access to sensitive configuration and data files
-<FilesMatch "^(config.*\.php|\.env|.*\.sqlite)$">
+<FilesMatch "^(config.*\.php|config-google-calendar\.php|\.env|.*\.sqlite)$">
     <IfModule !mod_authz_core.c>
         Order deny,allow
         Deny from all

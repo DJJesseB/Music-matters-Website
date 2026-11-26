@@ -1,3 +1,5 @@
+import {mountCalendarSettings} from './calendar-ui.js?v=1';
+
 /**
  * DJ Live Request Desk & Event Manager
  * Setup Wizard & Admin Desk Settings UI
@@ -280,6 +282,7 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
         <button type="button" data-set-tab="database">Database</button>
         <button type="button" data-set-tab="stripe">Stripe Payments</button>
         <button type="button" data-set-tab="security">Anti-Spam & Security</button>
+        <button type="button" data-set-tab="calendar">Google Calendar</button>
         <button type="button" data-set-tab="demo">Sample Data</button>
       </div>
 
@@ -511,6 +514,9 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
         </fieldset>
       </section>
 
+      <!-- Tab: Google Calendar -->
+      <section class="card" data-settings-panel="calendar" hidden><div id="calendarIntegrationCenter"></div></section>
+
       <!-- Tab: Demo Data -->
       <section class="card" data-settings-panel="demo" hidden>
         <fieldset>
@@ -543,6 +549,7 @@ export function setupUI({ api, app, head, esc, message, onComplete }) {
     </form>`;
 
     const form = document.querySelector('#settingsForm');
+    mountCalendarSettings({api,esc,message});
 
     // Tab switcher
     document.querySelectorAll('[data-set-tab]').forEach(btn => {

@@ -1,3 +1,4 @@
 data/*.sqlite*
+/public_html/dj-desk/config-google-calendar.php
 .DS_Store
 *.log

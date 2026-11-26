@@ -46,6 +46,7 @@ require_once __DIR__ . '/Auth.php';
 require_once __DIR__ . '/RequestKiosk.php';
 require_once __DIR__ . '/QRCode.php';
 require_once __DIR__ . '/Mailer.php';
+require_once __DIR__ . '/GoogleCalendar.php';
 
 // Initialize transactional email service
 $mailConfig = $config['email'] ?? [];
@@ -169,6 +170,8 @@ $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || (($_SER
 $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $appRoot = rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/\\');
 $baseUrl = $protocol . $host . ($appRoot ? $appRoot : '');
+
+DJ_GoogleCalendar::route($path, $method, $input);
 
 // Private business ledger; created lazily so existing installations migrate safely.
 if (strpos($path, 'admin/finance') === 0) {
@@ -861,6 +864,7 @@ if ($path === 'events' && $method === 'POST') {
     if (isset($saved['error'])) {
         json_error($saved['error'], $saved['code'] ?? 400);
     }
+    $saved['_calendarSync'] = DJ_GoogleCalendar::onEventSaved($saved);
     json_response($saved, 201);
 }
 
@@ -878,6 +882,7 @@ if (preg_match('#^events/([a-f0-9-]+)$#', $path, $m)) {
         if (isset($saved['error'])) {
             json_error($saved['error'], $saved['code'] ?? 400);
         }
+        $saved['_calendarSync'] = DJ_GoogleCalendar::onEventSaved($saved);
         json_response($saved);
     }
 }
