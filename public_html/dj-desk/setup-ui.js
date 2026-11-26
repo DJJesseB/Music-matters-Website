@@ -1,4 +1,4 @@
-import {mountCalendarSettings} from './calendar-ui.js?v=1';
+import {mountCalendarSettings} from './calendar-ui.js?v=2';
 
 /**
  * DJ Live Request Desk & Event Manager
