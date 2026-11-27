@@ -3,7 +3,7 @@ import {mountFollowups} from './followup-ui.js?v=181';
 import {paymentGuide} from './payment-guide.js?v=221';
 import './lighting-addon.js?v=211';
 import './addon-photo-preview.js?v=205';
-import {musicUI} from './music-ui.js?v=189';
+import {musicUI} from './music-ui.js?v=190';
 import {bookingUI} from './intake-ui.js?v=214';
 import {standardDeposit,depositPolicy,calculateDeposit} from './pricing.js?v=180';
 import {mountPackageEditor} from './package-ui.js?v=220';
@@ -115,7 +115,7 @@ function editor(e, initialTab='overview'){
  tab=initialTab;
  const newTabs = [['overview','Overview'],['finance','Contract & payments'],['planning','Planner & music']];
  const docTab = isNew ? 'finance' : 'documents';
- const plannerLinks = isNew ? '' : `<div class="wide event-hq-links">${eventLink('client-plan',e,'Client planner & access →')}${eventLink('music-admin',e,'Song requests & QR →')}</div>`;
+ const plannerLinks = isNew ? '' : `<div class="wide event-hq-links">${eventLink('client-plan',e,'Client planner & access →')}${eventLink('music-admin',e,'Song requests, QR & history →')}</div>`;
  const contractControls = select('Contract status','contractStatus',e.contractStatus,options.contractStatus);
  const retainerControls = field('Required retainer ($)','depositRequired',e.depositRequired??standardDeposit,'number','min="0" step="0.01" required readonly')+
   `<label class="wide check-row"><input type="checkbox" name="depositOverride" value="1" ${e.depositOverride?'checked':''}><span>Set a custom retainer amount (enter $0 to waive the retainer)</span></label><p class="wide hint" id="depositHelp">${esc(depositPolicy)}</p>`;

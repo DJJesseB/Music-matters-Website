@@ -6,13 +6,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {test} from 'node:test';
-import {randomUUID} from 'node:crypto';
+import {randomInt, randomUUID} from 'node:crypto';
 import {createRequire} from 'node:module';
 
 const php = process.env.PHP_BIN || 'php';
 const phpOptions = process.env.PHP_TEST_INI ? ['-c', process.env.PHP_TEST_INI] : [];
-const pin = '873049';
-const adminCredentials = {email: 'kiosk-test@example.com', password: 'LocalOnly-Test-Password'};
+const pin = String(randomInt(100000, 1000000));
+const wrongPin = String(100000 + (Number(pin) - 99999) % 900000);
+const adminCredentials = {email: 'kiosk-test@example.com', password: randomUUID()};
 
 test('request kiosk and existing guest and DJ flows', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dj-request-kiosk-'));
@@ -21,7 +22,7 @@ test('request kiosk and existing guest and DJ flows', async () => {
     let serverLog = '';
     try {
         await mkdir(join(app, 'api'), {recursive: true});
-        for (const file of ['Auth.php', 'Database.php', 'index.php', 'Mailer.php', 'PaperContracts.php', 'QRCode.php', 'RequestKiosk.php', 'SchoolInvoices.php']) {
+        for (const file of ['Auth.php', 'Database.php', 'GoogleCalendar.php', 'index.php', 'Mailer.php', 'PaperContracts.php', 'QRCode.php', 'RequestKiosk.php', 'RequestLifecycle.php', 'SchoolInvoices.php']) {
             await cp(new URL('../public_html/dj-desk/api/' + file, import.meta.url), join(app, 'api', file));
         }
         for (const file of ['kiosk.html', 'kiosk.js', 'kiosk.css', 'kiosk.webmanifest']) {
@@ -75,13 +76,23 @@ test('request kiosk and existing guest and DJ flows', async () => {
         }
         const staffLogin = await call('auth/login', {body: adminCredentials});
         const staff = {cookie: staffLogin.cookies[0].split(';')[0], csrf: staffLogin.result.csrf};
+        const currentTime = Math.floor(Date.now() / 1000);
+        const local = stamp => new Date(stamp * 1000).toISOString().slice(0, 16);
+        const {result: seeded} = await call('admin/music/events', staff);
+        for (const row of seeded) {
+            const eventPath = 'events/' + row.id;
+            const {result: eventData} = await call(eventPath, staff);
+            const date = local(currentTime - 7200).slice(0, 10);
+            await call(eventPath, {...staff, method: 'PUT', body: {...eventData, status: 'Confirmed',
+                date, timezone: 'UTC', startTime: local(currentTime - 7200).slice(11), endTime: local(currentTime + 7200).slice(11)}});
+        }
         const {result: events} = await call('admin/music/events', staff);
         const event = events.find(row => row.enabled);
         const otherEvent = events.find(row => row.id !== event.id);
         const desk = 'admin/events/' + event.id + '/music';
         const kiosks = desk + '/kiosks';
         const {result: queue} = await call(desk, staff);
-        const guest = 'music/' + queue.config.url.split('/').pop();
+        let guest = 'music/' + queue.config.url.split('/').pop();
         const launch = () => call(kiosks, {...staff, body: {action: 'launch', pin}, expect: 201});
         const submit = (title, key = randomUUID()) => ({title, artist: 'Kiosk test artist', key});
 
@@ -143,7 +154,7 @@ test('request kiosk and existing guest and DJ flows', async () => {
         await call('kiosk/requests', {...device, body: submit('Paused'), expect: 423});
         await control('resume');
         assert.equal(await status(), 'active');
-        await call('kiosk/exit', {...device, body: {pin: '111111'}, expect: 403});
+        await call('kiosk/exit', {...device, body: {pin: wrongPin}, expect: 403});
         await control('revoke');
         assert.equal(await status(), 'revoked');
         await call('kiosk/requests', {...device, body: submit('Revoked'), expect: 423});
@@ -154,11 +165,12 @@ test('request kiosk and existing guest and DJ flows', async () => {
         const {cookies} = await call('kiosk/pair', {kiosk: true, body: {code: second.result.code}});
         const secondDevice = {kiosk: true, cookie: cookies.find(value => value.startsWith('dj_desk_kiosk=')).split(';')[0]};
         const version = (await call(desk, staff)).result.config.version;
+        await call(desk, {cookie: staff.cookie, body: {action: 'pause', version}, expect: 403});
         await call(desk, {...staff, body: {action: 'pause', version}});
-        assert.equal((await call('kiosk/status', secondDevice)).result.state, 'closed');
+        assert.equal((await call('kiosk/status', secondDevice)).result.state, 'paused');
         await call(guest, {body: {...submit('Closed'), deviceId: randomUUID()}, expect: 423});
         await call(desk, {...staff, body: {action: 'open', version: version + 1}});
-        await call('kiosk/requests', {...secondDevice, body: submit('Closed session stays closed'), expect: 423});
+        assert.equal((await call('kiosk/status', secondDevice)).result.state, 'active');
 
         const third = await launch();
         const pairedAgain = await call('kiosk/pair', {kiosk: true, body: {code: third.result.code}});
@@ -170,7 +182,7 @@ test('request kiosk and existing guest and DJ flows', async () => {
         await call('events/' + event.id, {...staff, method: 'PUT', body: {...closedEvent, status: 'Confirmed'}});
         assert.equal((await call('kiosk/status', thirdDevice)).result.state, 'revoked');
         for (let attempt = 0; attempt < 8; attempt++) {
-            await call('kiosk/exit', {...thirdDevice, body: {pin: '111111'}, expect: 403});
+            await call('kiosk/exit', {...thirdDevice, body: {pin: wrongPin}, expect: 403});
         }
         const locked = await call('kiosk/exit', {...thirdDevice, body: {pin}, expect: 403});
         assert.match(locked.result.error, /locked/);
@@ -201,6 +213,12 @@ test('request kiosk and existing guest and DJ flows', async () => {
         assert.equal(fresh.result.consolidated, false);
         await call(guest, {body: {...submit('Still rate limited after a new submission'), deviceId: guestDevice}, expect: 429});
 
+        const setting = async (action, fields = {}, expect = 200) => {
+            const {result} = await call(desk, staff);
+            return (await call(desk, {...staff, body: {action, version: result.config.version, ...fields}, expect})).result;
+        };
+        const setWindow = (start, cutoff) => setting('schedule', {timezone: 'UTC', start: local(start), cutoff: local(cutoff)});
+
         if (process.env.KIOSK_PLAYWRIGHT_MODULE) {
             const {chromium} = createRequire(import.meta.url)(process.env.KIOSK_PLAYWRIGHT_MODULE);
             const browser = await chromium.launch({executablePath: process.env.KIOSK_CHROME_BIN});
@@ -208,10 +226,17 @@ test('request kiosk and existing guest and DJ flows', async () => {
                 const page = await browser.newPage({viewport: {width: 768, height: 1024}, hasTouch: true});
                 const errors = [];
                 page.on('pageerror', error => errors.push(error.message));
+                await setWindow(currentTime + 3600, currentTime + 7200);
                 const {result: {code: browserCode}} = await launch();
                 await page.goto('http://' + address + '/dj-desk/kiosk.html');
                 await page.getByLabel('Pairing code').fill(browserCode);
                 await page.getByRole('button', {name: 'Pair kiosk'}).click();
+                await page.getByRole('heading', {name: 'The event hasn’t started yet'}).waitFor();
+                await setWindow(currentTime - 3600, currentTime + 3600);
+                await page.getByLabel('Song title').waitFor();
+                await setting('pause');
+                await page.getByRole('heading', {name: 'Song requests are paused'}).waitFor();
+                await setting('resume');
                 await page.getByLabel('Song title').fill('Browser request');
                 await page.getByLabel('Artist').fill('Browser artist');
                 await page.getByRole('button', {name: 'Send request'}).click();
@@ -229,6 +254,70 @@ test('request kiosk and existing guest and DJ flows', async () => {
                 await browser.close();
             }
         }
+        const assertState = async state => {
+            assert.equal((await call(desk, staff)).result.config.lifecycle.state, state);
+            assert.equal((await call(guest)).result.state, state);
+            assert.equal((await call('kiosk/status', renewedDevice)).result.state, state);
+        };
+        const blocked = async () => {
+            await call(guest, {body: {...submit('Outside request hours'), deviceId: randomUUID()}, expect: 423});
+            await call('kiosk/requests', {...renewedDevice, body: submit('Outside request hours'), expect: 423});
+        };
+        await setWindow(currentTime + 3600, currentTime + 7200);
+        await assertState('standby');
+        await blocked();
+        await setWindow(currentTime - 3600, currentTime + 3600);
+        await assertState('active');
+        await setWindow(currentTime - 3600, currentTime - 60);
+        await assertState('closed');
+        await blocked();
+        const extended = await setting('extend', {minutes: 30});
+        assert.ok(extended.config.lifecycle.cutoffAt >= currentTime + 1800);
+        await assertState('active');
+        const rotated = await setting('rotate');
+        await call(guest, {expect: 404});
+        await call(guest, {body: {...submit('Retired QR'), deviceId: randomUUID()}, expect: 404});
+        guest = 'music/' + rotated.config.url.split('/').pop();
+        const oldGuest = guest;
+        await call('admin/events/' + otherEvent.id + '/close', {...staff, body: {status: 'Canceled'}});
+        assert.equal((await call(otherGuest)).result.state, 'closed');
+        await call(otherGuest, {body: {...submit('Canceled event'), deviceId: randomUUID()}, expect: 423});
+        const canceled = (await call('events/' + otherEvent.id, staff)).result;
+        await call('events/' + otherEvent.id, {...staff, method: 'PUT', body: {...canceled, status: 'Confirmed'}});
+        await setting('end');
+        await assertState('closed');
+        await blocked();
+        await setting('resume', {}, 409);
+        await call('auth/login', {...renewedDevice, body: adminCredentials, expect: 403});
+        await call('kiosk/exit', {...renewedDevice, body: {pin: wrongPin}, expect: 403});
+
+        // Move only the persisted end marker to exercise the exact one-hour archive behavior.
+        execFileSync(php, [...phpOptions, '-r',
+            "require 'api/Database.php'; DJ_Database::init(require 'config.php'); DJ_Database::update('dj_music_request_lifecycle', ['ended_at' => time() - 3601], ['event_id' => '" + event.id + "']);"
+        ], {cwd: app});
+        await assertState('archived');
+        await blocked();
+        await call(reset, {...staff, body: {confirm: true}, expect: 409});
+        const history = (await call(desk, staff)).result.requests;
+        assert.ok(history.some(row => row.id === fresh.result.reference));
+        const eventHq = (await call('admin/events/' + event.id + '/plan', staff)).result;
+        assert.ok(eventHq.musicRequests.some(row => row.id === fresh.result.reference));
+        const archivedEvent = (await call('events/' + event.id, staff)).result;
+        await call('events/' + event.id, {...staff, method: 'PUT', body: {...archivedEvent, endTime: '23:59'}});
+        await assertState('archived');
+        await call(desk + '/requests/' + fresh.result.reference, {...staff, method: 'PUT', body: {status: 'Played', version: 1}, expect: 409});
+        await call(oldGuest, {body: {...submit('Expired QR'), deviceId: randomUUID()}, expect: 423});
+        assert.equal((await call(otherGuest)).result.state, 'active');
+        await call('kiosk/exit', {...renewedDevice, body: {pin}});
+        const otherPath = 'events/' + otherEvent.id;
+        const {result: otherBooking} = await call(otherPath, staff);
+        await call(otherPath, {...staff, method: 'PUT', body: {...otherBooking,
+            date: local(currentTime - 86400).slice(0, 10), startTime: '00:00', endTime: '01:00'}});
+        assert.equal((await call(otherGuest)).result.state, 'archived');
+        const {result: previousDay} = await call(otherPath, staff);
+        await call(otherPath, {...staff, method: 'PUT', body: {...previousDay,
+            date: otherBooking.date, startTime: otherBooking.startTime, endTime: otherBooking.endTime}});
+        assert.equal((await call(otherGuest)).result.state, 'archived');
         execFileSync(php, [...phpOptions, '-r',
             "require 'api/Database.php'; DJ_Database::init(require 'config.php'); DJ_Database::update('dj_music_kiosk_pair_rate', ['window_minute' => intdiv(time(), 60), 'attempts' => 20], ['id' => 1]);"
         ], {cwd: app});

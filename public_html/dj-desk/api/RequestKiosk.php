@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/RequestLifecycle.php';
+
 final class DJ_RequestKiosk {
     const COOKIE = 'dj_desk_kiosk';
 
@@ -12,6 +14,7 @@ final class DJ_RequestKiosk {
     }
 
     public static function install(): void {
+        DJ_RequestLifecycle::install();
         $table = self::table();
         $sources = self::sources();
         $pdo = DJ_Database::pdo();
@@ -36,9 +39,9 @@ final class DJ_RequestKiosk {
         )$options");
     }
 
-    public static function open(?array $event, ?array $settings): bool {
-        return $event && !empty($settings['enabled'])
-            && !in_array($event['status'] ?? '', ['Canceled', 'Archived', 'Completed'], true);
+    private static function canPair(?array $event, ?array $settings): bool {
+        $lifecycle = DJ_RequestLifecycle::current($event, $settings);
+        return $settings && in_array($lifecycle['state'], ['standby', 'active', 'paused'], true);
     }
 
     public static function lockEvent(string $id): ?array {
@@ -111,9 +114,9 @@ final class DJ_RequestKiosk {
         $pdo->beginTransaction();
         try {
             $settings = self::lockEvent($id);
-            if (in_array($action, ['launch', 'resume'], true) && !self::open(DJ_Database::get_event($id), $settings)) {
+            if (in_array($action, ['launch', 'resume'], true) && !self::canPair(DJ_RequestLifecycle::lockedEvent($id), $settings)) {
                 $pdo->rollBack();
-                json_error('Open event requests first.', 409);
+                json_error('Create an event request link with an upcoming or active schedule first.', 409);
             }
             if ($action === 'launch') {
                 $pair = self::createPairingCode($id, $pinHash);
@@ -202,7 +205,7 @@ final class DJ_RequestKiosk {
         try {
             $id = $target['event_id'];
             $settings = self::lockEvent($id);
-            if (!self::open(DJ_Database::get_event($id), $settings)) {
+            if (!self::canPair(DJ_RequestLifecycle::lockedEvent($id), $settings)) {
                 $pdo->rollBack();
                 json_error('This event is no longer accepting requests.', 423);
             }
@@ -232,9 +235,14 @@ final class DJ_RequestKiosk {
         $event = DJ_Database::get_event($session['event_id']);
         $settings = DJ_Database::get_table_name('music_request_settings');
         $config = DJ_Database::get_row("SELECT enabled FROM $settings WHERE event_id = ?", [$session['event_id']]);
-        $state = (int)$session['expires_at'] > time() && self::open($event, $config) ? $session['state'] : 'closed';
-        if (in_array($state, ['active', 'paused'], true) && (int)$session['last_seen'] <= time() - 5) {
-            DJ_Database::update(self::table(), ['last_seen' => time()], ['id' => $session['id'], 'state' => $state]);
+        $lifecycle = DJ_RequestLifecycle::current($event, $config);
+        $state = $lifecycle['state'];
+        if ((int)$session['expires_at'] <= time()) $state = 'closed';
+        elseif (in_array($state, ['active', 'paused', 'standby'], true) && $session['state'] !== 'active') {
+            $state = $session['state'];
+        }
+        if (in_array($session['state'], ['active', 'paused'], true) && (int)$session['last_seen'] <= time() - 5) {
+            DJ_Database::update(self::table(), ['last_seen' => time()], ['id' => $session['id'], 'state' => $session['state']]);
         }
         json_response(['state' => $state, 'school' => $event ? music_school_event($event) : false]);
     }

@@ -14,6 +14,14 @@ function guestDevice() {
     }
 }
 
+const requestMessages = {
+    standby: 'The event hasn’t started yet. Please check back soon!',
+    paused: 'Song requests are paused.',
+    closed: 'We are no longer accepting song requests. Thank you for celebrating with us!',
+    archived: 'This event has ended. Thank you for joining us!'
+};
+const requestLabels = {standby: 'Standby', active: 'Accepting requests', paused: 'Paused', closed: 'Requests closed', archived: 'Archived'};
+
 export function musicUI({api, app, head, esc, date, message}) {
     let timer, generation = 0;
     function stop() {
@@ -72,7 +80,7 @@ export function musicUI({api, app, head, esc, date, message}) {
         function renderOpen() {
             const status = app.querySelector('[data-guest-open]');
             const submit = app.querySelector('#guestSong button[type=submit]');
-            if (status) status.textContent = data.open ? '' : 'Song requests are paused.';
+            if (status) status.textContent = data.open ? '' : requestMessages[data.state] || 'Song requests are unavailable.';
             if (submit) submit.disabled = !data.open || submit.dataset.sending === 'yes';
             const picks = app.querySelector('[data-song-picks]');
             if (picks) picks.disabled = !data.open;
@@ -105,6 +113,7 @@ export function musicUI({api, app, head, esc, date, message}) {
                     ? 'This link has changed. Scan the latest event QR.' : 'Live updates are reconnecting.';
                 if (error.status === 404) {
                     data.open = false;
+                    data.state = null;
                     renderOpen();
                 }
             } finally {
@@ -235,7 +244,10 @@ export function musicUI({api, app, head, esc, date, message}) {
                     if (!current() || !formElement.isConnected) return;
                     formElement.querySelector('[data-song-error]').textContent = error instanceof TypeError
                         ? 'Connection interrupted. Your song is still here. Try again when you reconnect.' : error.message;
-                    if (error.status === 423) data.open = false;
+                    if (error.status === 423) {
+                        data.open = false;
+                        void refresh();
+                    }
                 } finally {
                     delete button.dataset.sending;
                     if (current()) renderOpen();
@@ -246,7 +258,7 @@ export function musicUI({api, app, head, esc, date, message}) {
         timer = setInterval(refresh, 6000);
     }
 
- async function events(){stop();const rows=await api('admin/music/events');app.innerHTML=head('LIVE REQUEST DESK','The soundtrack starts with your guests.','Open an event to manage its event QR and song requests.')+`<div class="columns">${rows.map(e=>`<section class="card"><span class="badge ${e.enabled?'':'purple'}">${e.enabled?'Requests open':'Requests paused'}</span><h2>${esc(e.name)}</h2><p>${date(e.date)} · ${esc(e.type)}</p><p>${e.counts.Pending} pending · ${e.counts.Approved} approved · ${e.counts.Played} played</p><a class="button" href="#music-admin/${e.id}">Open request desk →</a></section>`).join('')||'<section class="card">Create an event first to get started.</section>'}</div>`;}
+ async function events(){stop();const rows=await api('admin/music/events');app.innerHTML=head('LIVE REQUEST DESK','The soundtrack starts with your guests.','Open an event to manage its event QR and song requests.')+`<div class="columns">${rows.map(e=>`<section class="card"><span class="badge ${e.enabled?'':'purple'}">${e.hasLink ? requestLabels[e.state] : 'Request link pending'}</span><h2>${esc(e.name)}</h2><p>${date(e.date)} · ${esc(e.type)}</p><p>${e.counts.Pending} pending · ${e.counts.Approved} approved · ${e.counts.Played} played</p><a class="button" href="#music-admin/${e.id}">Open request desk →</a></section>`).join('')||'<section class="card">Create an event first to get started.</section>'}</div>`;}
 
     async function queue(id) {
         stop();
@@ -264,12 +276,28 @@ export function musicUI({api, app, head, esc, date, message}) {
                     <div data-connection role="status">Live · connected</div>
                     <div class="music-booth-controls">
                         <button type="button" data-pause></button>
+                        <button type="button" class="secondary" data-extend>Extend requests</button>
+                        <button type="button" class="secondary" data-end>End requests</button>
                         <button type="button" class="secondary" data-qr>Show guest QR</button>
                         <button type="button" class="secondary" data-launch-kiosk>Launch Request Kiosk</button>
                         <button type="button" class="secondary" data-sort-votes aria-pressed="false">Sort incoming by votes</button>
                         <button type="button" class="secondary" data-fullscreen>Full screen</button>
                         <button type="button" class="secondary" data-reset-requests>Reset request list</button>
                     </div>
+                    <p data-request-lifecycle role="status"></p>
+                    <details data-schedule><summary>Event request schedule</summary>
+                        <form data-request-schedule>
+                            <label>Event timezone<input name="timezone" placeholder="America/New_York"></label>
+                            <label>Start override<input type="datetime-local" name="start"></label>
+                            <label>Cutoff override<input type="datetime-local" name="cutoff"></label>
+                            <p>Leave either time blank to follow the booking. Saving clears any temporary extension.</p>
+                            <button type="submit">Save request schedule</button>
+                        </form>
+                    </details>
+                    <form data-extension hidden>
+                        <label>Additional minutes<input name="minutes" type="number" value="30" min="1" max="240" required></label>
+                        <button type="submit">Apply extension</button>
+                    </form>
                     <div class="music-undo"><span data-action-feedback role="status"></span>
                         <button type="button" class="secondary" data-undo hidden>Undo</button></div>
                 </div>
@@ -333,11 +361,14 @@ export function musicUI({api, app, head, esc, date, message}) {
         const kioskPair = find('[data-kiosk-pair]');
         const kioskFeedback = find('[data-kiosk-feedback]');
         const kioskUrl = new URL('./kiosk.html', location.href);
-        let previousKiosks;
+        const schedule = find('[data-request-schedule]');
+        const extension = find('[data-extension]');
+        let previousKiosks, previousSchedule;
 
         function renderKiosks() {
             const kiosks = data.kiosks || [];
-            const serialized = JSON.stringify(kiosks.map(({id, state, connected, lastSeen}) => [id, state, connected, connected ? null : lastSeen]));
+            const lifecycle = data.config.lifecycle;
+            const serialized = JSON.stringify([lifecycle.state, lifecycle.terminal, kiosks.map(({id, state, connected, lastSeen}) => [id, state, connected, connected ? null : lastSeen])]);
             if (serialized === previousKiosks) return;
             previousKiosks = serialized;
             find('[data-kiosk-panel]').hidden = !kiosks.length;
@@ -345,10 +376,10 @@ export function musicUI({api, app, head, esc, date, message}) {
             const focused = list.contains(document.activeElement) ? document.activeElement : null;
             list.innerHTML = kiosks.map(kiosk => {
                 const status = kiosk.state === 'pairing' ? 'Waiting for pairing'
-                    : (kiosk.state === 'paused' ? 'Paused' : 'Accepting requests') + ' · '
+                    : (kiosk.state === 'paused' ? 'Kiosk paused' : requestLabels[lifecycle.state]) + ' · '
                     + (kiosk.connected ? 'Connected' : 'Offline');
                 const lastSeen = !kiosk.connected && kiosk.lastSeen ? ' · Last seen ' + new Date(kiosk.lastSeen * 1000).toLocaleTimeString() : '';
-                const controls = kiosk.state === 'pairing' ? '' : '<button type="button" class="secondary" data-kiosk-action="'
+                const controls = kiosk.state === 'pairing' || lifecycle.state === 'archived' || lifecycle.state === 'closed' ? '' : '<button type="button" class="secondary" data-kiosk-action="'
                     + (kiosk.state === 'paused' ? 'resume">Resume' : 'pause">Pause') + '</button> ';
                 return '<div class="event" data-kiosk-id="' + esc(kiosk.id) + '"><p>Kiosk ' + esc(kiosk.id.slice(0, 8))
                     + ' · ' + status + esc(lastSeen) + '</p><div>' + controls
@@ -365,14 +396,33 @@ export function musicUI({api, app, head, esc, date, message}) {
             const serialized = JSON.stringify(data.config);
             if (serialized === previousConfig) return;
             previousConfig = serialized;
-            const {enabled, url, version} = data.config;
-            pause.textContent = enabled ? 'Pause requests' : 'Open requests';
-            pause.setAttribute('aria-pressed', String(!enabled));
-            find('[data-launch-kiosk]').disabled = !enabled;
+            const {url, version, lifecycle, paused} = data.config;
+            const {state, terminal, ended, timezone, startsAt, cutoffAt, archiveAt, overrideStart, overrideCutoff} = lifecycle;
+            const locked = terminal || state === 'archived';
+            pause.textContent = !url ? 'Create event request link' : paused ? 'Resume requests' : 'Pause requests';
+            pause.disabled = terminal || Boolean(url && (locked || ended || state === 'closed'));
+            find('[data-launch-kiosk]').disabled = !url || locked || state === 'closed';
+            find('[data-end]').disabled = !url || locked || ended || state === 'closed';
+            find('[data-extend]').disabled = !url || locked || ended || cutoffAt === null;
+            find('[data-reset-requests]').hidden = state === 'archived';
+            find('[data-schedule]').hidden = terminal || Boolean(url && (locked || ended));
+            if (find('[data-extend]').disabled) extension.hidden = true;
+            const clock = new Intl.DateTimeFormat('en-US', {dateStyle: 'medium', timeStyle: 'short', timeZone: timezone});
+            const times = [[startsAt, 'Starts'], [cutoffAt, 'Cutoff'], [archiveAt, 'Archive']]
+                .filter(([stamp]) => stamp !== null).map(([stamp, label]) => label + ' ' + clock.format(stamp * 1000));
+            find('[data-request-lifecycle]').textContent = (url ? requestLabels[state] : 'Request link pending')
+                + (times.length ? ' · ' + times.join(' · ') + ' (' + timezone + ')' : ' · Add booking hours or set an event request schedule.');
+            const scheduleValues = JSON.stringify([timezone, overrideStart, overrideCutoff]);
+            if (scheduleValues !== previousSchedule) {
+                schedule.elements.timezone.value = timezone;
+                schedule.elements.start.value = overrideStart;
+                schedule.elements.cutoff.value = overrideCutoff;
+                previousSchedule = scheduleValues;
+            }
             find('[data-qr]').disabled = !url;
-            find('[data-rotate]').hidden = !url;
+            find('[data-rotate]').hidden = !url || locked;
             const preferences = find('[data-preferences]');
-            preferences.disabled = !url;
+            preferences.disabled = !url || locked;
             preferences.setAttribute('aria-pressed', String(!!data.config.showApproved));
             preferences.textContent = data.config.showApproved ? 'Hide approved songs from guests' : 'Show approved songs to guests';
             const qrUrl = (window.djDeskConfig?.apiBase || './api/') + path + '/qr?v=' + version;
@@ -400,13 +450,13 @@ export function musicUI({api, app, head, esc, date, message}) {
                 + esc(song.artist) + '</p><small>' + support + (support === 1 ? ' request' : ' requests & votes')
                 + ' · ' + sources
                 + (song.requesterBlocked ? ' · Requester blocked' : '') + '</small></div><div class="music-song-actions">'
-                + controls[song.status] + (song.kioskOrigin ? '' : '<button type="button" class="secondary" data-block>'
+                + (data.config.lifecycle.state === 'archived' ? '' : controls[song.status]) + (song.kioskOrigin || data.config.lifecycle.state === 'archived' ? '' : '<button type="button" class="secondary" data-block>'
                 + (song.requesterBlocked ? 'Unblock requester' : 'Block requester') + '</button>') + '</div></article>';
         }
         function render() {
             renderConfig();
             renderKiosks();
-            const serialized = JSON.stringify([data.requests, data.counts, sortByVotes]);
+            const serialized = JSON.stringify([data.requests, data.counts, sortByVotes, data.config.lifecycle.state]);
             if (serialized === previousRows) return;
             previousRows = serialized;
             for (const status of ['Pending', 'Approved', 'Played', 'Denied']) {
@@ -432,7 +482,7 @@ export function musicUI({api, app, head, esc, date, message}) {
                 + (top.length ? '<h3>Most backed requests</h3><ol>' + top.map(song => '<li>' + esc(song.title)
                 + ' — ' + esc(song.artist) + ' (' + (Number(song.votes) + 1) + ')</li>').join('') + '</ol>' : '');
             if (undo && !data.requests.some(song => song.id === undo.id && song.version === undo.version)) undo = null;
-            undoButton.hidden = !undo;
+            undoButton.hidden = !undo || data.config.lifecycle.state === 'archived';
         }
         async function refresh() {
             if (!current() || document.hidden || pending) return pending;
@@ -470,6 +520,10 @@ export function musicUI({api, app, head, esc, date, message}) {
             } finally {
                 busy = false;
                 if (button.isConnected) button.disabled = false;
+                if (current()) {
+                    previousConfig = null;
+                    renderConfig();
+                }
             }
         }
         async function setStatus(song, status, version = song.version) {
@@ -514,7 +568,31 @@ export function musicUI({api, app, head, esc, date, message}) {
             const result = await api(path, 'POST', {action, version: data.config.version, ...options});
             if (current()) data = result;
         }
-        pause.onclick = () => void mutate(pause, () => updateSettings(data.config.enabled ? 'pause' : 'open'));
+        pause.onclick = () => void mutate(pause, () => updateSettings(!data.config.url ? 'setup' : data.config.paused ? 'resume' : 'pause'));
+        const endButton = find('[data-end]');
+        endButton.onclick = () => {
+            if (confirm('End song requests for this event? The queue will be available for one more hour.')) {
+                void mutate(endButton, () => updateSettings('end'));
+            }
+        };
+        find('[data-extend]').onclick = () => {
+            extension.hidden = !extension.hidden;
+            if (!extension.hidden) extension.elements.minutes.focus();
+        };
+        extension.onsubmit = event => {
+            event.preventDefault();
+            void mutate(extension.querySelector('button'), async () => {
+                await updateSettings('extend', {minutes: extension.elements.minutes.valueAsNumber});
+                extension.hidden = true;
+            });
+        };
+        schedule.onsubmit = event => {
+            event.preventDefault();
+            const {timezone, start, cutoff} = schedule.elements;
+            void mutate(schedule.querySelector('button'), () => updateSettings('schedule', {
+                timezone: timezone.value.trim(), start: start.value, cutoff: cutoff.value
+            }));
+        };
         const resetDialog = find('[data-reset-dialog]');
         const resetError = find('[data-reset-error]');
         const confirmReset = find('[data-confirm-reset]');

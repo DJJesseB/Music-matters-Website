@@ -44,7 +44,7 @@ function render() {
     request.hidden = finished || state !== 'active' || confirmed;
     confirmation.hidden = finished || state !== 'active' || !confirmed;
     exit.hidden = finished || state === 'unpaired' || state === null;
-    rePair.hidden = !['closed', 'revoked'].includes(state);
+    rePair.hidden = state !== 'revoked';
     find('#signin').hidden = !finished;
     for (const form of [pair, request, exitForm]) {
         form.querySelector('button[type="submit"]').disabled = working || !online;
@@ -53,8 +53,10 @@ function render() {
     heading.textContent = finished ? 'Kiosk ended' : pairingAgain ? 'Pair request kiosk' : ({
         active: confirmed ? 'Request received' : 'What’s your song?',
         unpaired: 'Set up request kiosk',
-        paused: 'Kiosk paused',
+        standby: 'The event hasn’t started yet',
+        paused: 'Song requests are paused',
         closed: 'Requests closed',
+        archived: 'This event has ended',
         revoked: 'Kiosk ended'
     })[state] || 'Song requests';
 }
