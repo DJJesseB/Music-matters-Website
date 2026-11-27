@@ -5,7 +5,7 @@ import {schoolFields} from './school-schema.js?v=180';
 import {depositPolicy,calculateDeposit} from './pricing.js?v=180';
 import {mountPackageSummary} from './package-ui.js?v=205';
 import {timeField,bindTimeFields,readTime} from './time-input.js?v=180';
-import {mountWedding} from './wedding-ui.js?v=184';
+import {mountWedding} from './wedding-ui.js?v=185';
 import {mountContracts} from './contracts-ui.js?v=227';
 import {mountSchoolInvoices} from './school-invoice-ui.js?v=233';
 
