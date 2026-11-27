@@ -140,6 +140,7 @@ function editor(e, initialTab='overview'){
   (isNew ? discounts+retainerControls : `<div class="wide">${eventDisclosure('Retainer & discounts',`<div class="grid">${retainerControls}${discounts}</div>`)}</div>`)+
   field('Retainer received ($)','depositReceived',e.depositReceived,'number','min="0" step="0.01" required')+
   field('Total paid including retainer ($)','paid',e.paid,'number','min="0" step="0.01" required')+
+  `<p class="wide hint">Use the manual payment records below for new cash, check, or money order payments. This total remains editable for older payments that predate payment records; avoid entering the same payment twice.</p>`+
   field('Retainer due','depositDue',e.depositDue,'date')+field('Balance due','balanceDue',e.balanceDue,'date')+
   `<div class="wide">${paymentGuide(e,esc,money)}</div><div class="wide"><small>Remaining balance</small><div class="amount" id="balance"></div></div>`,'finance')+
   actions+'</form>';
