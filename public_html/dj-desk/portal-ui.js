@@ -6,6 +6,7 @@ import {depositPolicy,calculateDeposit} from './pricing.js?v=180';
 import {mountPackageSummary} from './package-ui.js?v=205';
 import {timeField,bindTimeFields,readTime} from './time-input.js?v=180';
 import {mountWedding} from './wedding-ui.js?v=192';
+import {bindPlaybookButton} from './playbook.js?v=1';
 import {mountContracts} from './contracts-ui.js?v=227';
 import {mountSchoolInvoices} from './school-invoice-ui.js?v=233';
 
@@ -73,7 +74,7 @@ export function portalUI({api,app,head,esc,field,area,money,date,message,onLogin
 const prefix=(admin?'admin':'portal')+'/events/'+id;const {event:e,fields,musicRequests,plan}=await api(prefix+'/plan');let p=plan;const answers=p.answers||{};
  const back = admin ? '#event/'+esc(id) : '#portal';
  app.innerHTML = `<div class="client-plan-header">
-  <div class="client-plan-nav"><a href="${back}">← ${admin?'Event HQ':'My events'}</a><a href="../">Main website</a></div>
+  <div class="client-plan-nav"><a href="${back}">← ${admin?'Event HQ':'My events'}</a><a href="../">Main website</a>${admin?'<button type="button" class="secondary" data-open-playbook>Print Day-of Playbook</button>':''}</div>
   <h1>${esc(e.name)}</h1>
   <p>${e.date?date(e.date):'Date to be decided'} · ${esc(e.venue||'Venue to be decided')}</p>
   <p class="client-plan-status">Booking · <strong>${esc(e.status)}</strong> <span>Contract · <strong data-contract-status>${esc(e.contractStatus)}</strong></span></p>
@@ -105,6 +106,7 @@ const prefix=(admin?'admin':'portal')+'/events/'+id;const {event:e,fields,musicR
  if(admin&&e.type==='School dance')await mountSchoolInvoices({api,app,event:e,esc,money,message});
  const form=app.querySelector('#clientPlan');
  const answerKeys=Object.keys(e.type==='School dance'?{...fields,...schoolFields}:fields);
+ if(admin)bindPlaybookButton(app.querySelector('[data-open-playbook]'),{id,api,message});
  const changed=()=>{onDirty(true);document.querySelector('#planState').textContent='Unsaved changes';};
  if(e.type==='School dance')mountSchool({form,event:e,plan:p,esc,field,area,admin});
  const weddingController=e.type==='Wedding'?mountWedding({form,event:e,plan:p,admin,esc,field,area,changed}):null;const moments=document.querySelector('#moments');

@@ -9,7 +9,8 @@ import {standardDeposit,depositPolicy,calculateDeposit} from './pricing.js?v=180
 import {mountPackageEditor} from './package-ui.js?v=220';
 import {formMessage,installFormValidation} from './form-feedback.js?v=181';
 import {timeField,bindTimeFields} from './time-input.js?v=180';
-import {portalUI} from './portal-ui.js?v=246';
+import {portalUI} from './portal-ui.js?v=247';
+import {bindPlaybookButton} from './playbook.js?v=1';
 import {mountSchoolInvoices} from './school-invoice-ui.js?v=233';
 import {setupUI} from './setup-ui.js?v=207';
 import {insuranceUI} from './insurance-ui.js?v=1';
@@ -80,7 +81,7 @@ const eventsLink = '<a class="button secondary" href="#events">← Events</a>';
 const eventLink = (route, e, label) => `<a class="button secondary" href="#${route}/${esc(e.id)}">${label}</a>`;
 function eventHeader(e) {
  return `<div class="event-hq-header">
-  <div class="event-hq-title"><div><p class="eyebrow">Event HQ</p><h1>${esc(e.name)}</h1></div>${eventsLink}</div>
+  <div class="event-hq-title"><div><p class="eyebrow">Event HQ</p><h1>${esc(e.name)}</h1></div><div class="actions"><button type="button" class="secondary" data-open-playbook>Print Day-of Playbook</button>${eventsLink}</div></div>
   <dl class="event-hq-facts">
    <div><dt>Client</dt><dd>${esc(e.client.name || 'To be decided')}</dd></div>
    <div><dt>Event date</dt><dd>${e.date ? date(e.date) : 'To be decided'}</dd></div>
@@ -142,6 +143,7 @@ function editor(e, initialTab='overview'){
   `<div class="wide">${paymentGuide(e,esc,money)}</div><div class="wide"><small>Remaining balance</small><div class="amount" id="balance"></div></div>`,'finance')+
   actions+'</form>';
  const form=app.querySelector('#booking');
+ if(!isNew)bindPlaybookButton(app.querySelector('[data-open-playbook]'),{id:e.id,api,message});
  const saveButton=form.querySelector('#saveBooking');
  const contractButton=form.querySelector('[data-prepare-contract]');
  let preparingContract=false;
