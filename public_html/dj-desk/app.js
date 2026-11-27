@@ -12,6 +12,7 @@ import {timeField,bindTimeFields} from './time-input.js?v=180';
 import {portalUI} from './portal-ui.js?v=248';
 import {bindPlaybookButton} from './playbook.js?v=1';
 import {mountSchoolInvoices} from './school-invoice-ui.js?v=233';
+import {mountEventPayments} from './event-payments-ui.js?v=1';
 import {setupUI} from './setup-ui.js?v=207';
 import {insuranceUI} from './insurance-ui.js?v=1';
 import {socialMediaUI} from './social-media-ui.js?v=1';
@@ -153,6 +154,16 @@ function editor(e, initialTab='overview'){
   preparingContract=false;
  };
  if(!isNew)mountStripePayments({root:form.querySelector('[data-section=finance]'),event:e,api,admin:true,esc,money,message});
+ if(!isNew&&e.type!=='School dance')mountEventPayments({
+  root:form.querySelector('[data-section=finance]'),event:e,api,esc,money,message,
+  onUpdated:async()=>{
+   e=await api('events/'+e.id);
+   form.elements.depositReceived.value=e.depositReceived;
+   form.elements.paid.value=e.paid;
+   calc();
+   events=await api('events');
+  }
+ });
  bindTimeFields(form);
  const packageEditor=mountPackageEditor({form,event:e,esc,money,changed:()=>dirty=true});
  if(!isNew){
