@@ -1,4 +1,13 @@
 export const receptionOffsets={partyIntro:0,entrance:5,firstDance:10};
+export const postDinnerOffsets={fatherDance:0,motherDance:5,secondDance:10,openDancing:15,cake:45,openDancing2:50};
+const beforeDinnerParentOffsets={fatherDance:-10,motherDance:-5};
+export function dinnerCueEstimate(anchor,id,beforeDinner=false){
+ const offsets=beforeDinner?beforeDinnerParentOffsets:postDinnerOffsets;
+ if(!Object.hasOwn(offsets,id)||typeof anchor!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(anchor))return '';
+ const [hour,minute]=anchor.split(':').map(Number);
+ const total=(hour*60+minute+offsets[id]+1440)%1440;
+ return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
+}
 export function weddingGuestArrival(wedding){
  const ceremony=wedding.moments?.ceremony;
  if(ceremony?.enabled)return {time:ceremony.details?.guest_arrival||'',tbd:ceremony.details?.guest_arrival_tbd==='Yes',source:'ceremony'};
