@@ -1092,6 +1092,10 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/access$#', $path, $m)) {
 require_once __DIR__ . '/PaperContracts.php';
 dj_paper_contract_route($path, $method, $input);
 
+// Manual event payment records for non-school bookings.
+require_once __DIR__ . '/EventPayments.php';
+dj_event_payment_route($path,$method,$input);
+
 // School business-office invoices and check payment lifecycle.
 require_once __DIR__ . '/SchoolInvoices.php';
 dj_school_invoice_route($path,$method,$input);
