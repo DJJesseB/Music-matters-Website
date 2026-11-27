@@ -9,6 +9,14 @@ export function lastDanceTime(end){
  const [h,m]=end.split(':').map(Number),total=(h*60+m-5+1440)%1440;
  return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
 }
+export function dinnerMidpoint(start,end){
+ const valid=/^([01]\d|2[0-3]):[0-5]\d$/;
+ if(!valid.test(start)||!valid.test(end)||start===end)return null;
+ const minutes=time=>Number(time.slice(0,2))*60+Number(time.slice(3));
+ const initial=minutes(start),duration=(minutes(end)-initial+1440)%1440;
+ const midpoint=(initial+Math.round(duration/2))%1440;
+ return String(Math.floor(midpoint/60)).padStart(2,'0')+':'+String(midpoint%60).padStart(2,'0');
+}
 export function receptionEstimate(start,id){
  if(!Object.hasOwn(receptionOffsets,id)||typeof start!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(start))return null;
  const [h,m]=start.split(':').map(Number),total=h*60+m+receptionOffsets[id];
