@@ -1004,6 +1004,23 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/plan$#', $path, $m)) {
             json_error('This planner changed. Reload before saving.', 409);
         }
 
+        $weddingValues = $input['wedding']['values'] ?? null;
+        if (is_array($weddingValues) && array_key_exists('monogram', $weddingValues)) {
+            $monogram = $weddingValues['monogram'];
+            if ($monogram !== '') {
+                if (!is_string($monogram) || strlen($monogram) > 2796230
+                    || !preg_match('#^data:(image/(?:png|jpeg));base64,#D', $monogram, $format)) {
+                    json_error('Choose a PNG or JPG monogram up to 2 MB.', 422);
+                }
+                $image = base64_decode(substr($monogram, strlen($format[0])), true);
+                $info = $image === false ? false : @getimagesizefromstring($image);
+                if ($info === false || strlen($image) > 2097152 || $info['mime'] !== $format[1]
+                    || $info[0] > 4096 || $info[1] > 4096) {
+                    json_error('Choose a valid PNG or JPG monogram up to 2 MB and 4096 pixels per side.', 422);
+                }
+            }
+        }
+
         if ($row && is_array($input['wedding']['values'] ?? null)) {
             $previous = json_decode($row['body'], true);
             if (is_array($previous['wedding']['values'] ?? null)) {
