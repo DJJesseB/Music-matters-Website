@@ -8,6 +8,15 @@ import {timeField,bindTimeFields,readTime} from './time-input.js?v=180';
 import {mountWedding} from './wedding-ui.js?v=181';
 import {mountContracts} from './contracts-ui.js?v=227';
 import {mountSchoolInvoices} from './school-invoice-ui.js?v=233';
+
+export function momentTitle(item) {
+ const title = [item.detail, item.activity].find(value => typeof value === 'string' && value.trim());
+ if (title) return title.trim();
+ const source = [item.notes, item.music].find(value => typeof value === 'string' && value.trim());
+ if (!source) return '';
+ const line = source.trim().split(/\r?\n/, 1)[0].trim();
+ return line.length <= 80 ? line : line.slice(0, 79).trimEnd() + '…';
+}
 function mountClock(anchor,event){
  const card=document.createElement('section');card.className='event-clock card';
  card.innerHTML='<div class="clock-heading"><div><h2>Event clock</h2></div><button type="button" class="clock-toggle" aria-expanded="false" aria-controls="liveEventClock">◷ &nbsp; Show live clock & countdown</button></div><div id="liveEventClock" hidden><div class="clock-displays"><div><span>Current local time</span><strong id="clockTime"></strong><small id="clockDate"></small></div><div><span id="countdownLabel"></span><strong id="clockCountdown"></strong><small id="countdownDate"></small></div></div><p class="clock-zone">Times use this device’s timezone.</p></div>';
@@ -99,7 +108,31 @@ const prefix=(admin?'admin':'portal')+'/events/'+id;const {event:e,fields,musicR
  const changed=()=>{onDirty(true);document.querySelector('#planState').textContent='Unsaved changes';};
  if(e.type==='School dance')mountSchool({form,event:e,plan:p,esc,field,area,admin});
  const weddingController=e.type==='Wedding'?mountWedding({form,event:e,plan:p,admin,esc,field,area,changed}):null;const moments=document.querySelector('#moments');
- function moment(item={time:'',detail:''}){const row=document.createElement('div');row.className='timeline-row';row.innerHTML=timeField('Moment time','momentTime',item.time,true)+field('Moment / announcement','detail',item.detail,'text','required maxlength="5000"')+(['Wedding','School dance'].includes(e.type)?area('Music / song / artist','extraMusic',item.music)+area('DJ / MC notes','extraNotes',item.notes):'')+'<button type="button" class="secondary" aria-label="Remove timeline moment">Remove</button>';bindTimeFields(row);row.querySelector('button').onclick=()=>{row.remove();changed();};moments.append(row);}
+ const readMoment = row => ({
+  time: readTime(row),
+  detail: row.querySelector('[name=detail]').value,
+  ...(['Wedding','School dance'].includes(e.type) ? {
+   music: row.querySelector('[name=extraMusic]').value,
+   notes: row.querySelector('[name=extraNotes]').value
+  } : {})
+ });
+ function moment(item={time:'',detail:''}){
+  const row=document.createElement('div');
+  row.className='timeline-row';
+  row.innerHTML=timeField('Moment time','momentTime',item.time,true)+field('Moment / announcement','detail',momentTitle(item),'text','maxlength="5000"')+(['Wedding','School dance'].includes(e.type)?area('Music / song / artist','extraMusic',item.music)+area('DJ / MC notes','extraNotes',item.notes):'')+'<button type="button" class="secondary" aria-label="Remove timeline moment">Remove</button>';
+  const title=row.querySelector('[name=detail]');
+  const updateTitle=()=>{
+   const {notes,music}=readMoment(row);
+   const suggested=momentTitle({notes,music});
+   title.required=!suggested;
+   title.placeholder=suggested;
+  };
+  bindTimeFields(row);
+  updateTitle();
+  row.addEventListener('input',updateTitle);
+  row.querySelector('button').onclick=()=>{row.remove();changed();};
+  moments.append(row);
+ }
  p.timeline.forEach(moment);document.querySelector('#addMoment').onclick=()=>{if(moments.children.length<50){moment();changed();}};form.addEventListener('input',changed);
  disclosePlannerSections(form);
  if(admin&&location.hash.endsWith('?contract')){
@@ -111,7 +144,7 @@ const prefix=(admin?'admin':'portal')+'/events/'+id;const {event:e,fields,musicR
    workspace.querySelector('[name=email]')?.focus({preventScroll:true});
   }
  }
- form.onsubmit=async event=>{event.preventDefault();const f=new FormData(form),payload={version:p.version,answers:{},mustPlay:f.get('mustPlay'),doNotPlay:f.get('doNotPlay'),playlist:f.get('playlist'),submitted:event.submitter?.name==='submit',timeline:[...moments.children].map(row=>({time:readTime(row),detail:row.querySelector('[name=detail]').value,...(['Wedding','School dance'].includes(e.type)?{music:row.querySelector('[name=extraMusic]').value,notes:row.querySelector('[name=extraNotes]').value}:{})}))};if(weddingController){payload.wedding=weddingController.read();payload.answers=p.answers;}else {payload.answers={...p.answers};for(const k of answerKeys){if(f.has('answer_'+k))payload.answers[k]=f.get('answer_'+k);}}const buttons=form.querySelectorAll('[type=submit]');buttons.forEach(b=>b.disabled=true);try{const data=await api(prefix+'/plan','PUT',payload);p=data.plan;const savedNotice=app.querySelector('[data-planner-save-status]');if(savedNotice)savedNotice.textContent='Planner: '+data.event.plannerStatus;onDirty(false);document.querySelector('#planHint').textContent=p.submitted?'Submitted for DJ review. Saving a new draft reopens your planner.':'Draft saved. Submit when your plans are ready for DJ review.';document.querySelector('#planState').textContent=(payload.submitted?'Submitted for DJ review':'Draft saved')+' · Last saved '+new Date(p.savedAt).toLocaleString();message(payload.submitted?'Your planner is ready for DJ review.':'Your draft has been saved.');}catch(err){message(err.message,true,err.field);}finally{buttons.forEach(b=>b.disabled=false);}};
+ form.onsubmit=async event=>{event.preventDefault();const f=new FormData(form),payload={version:p.version,answers:{},mustPlay:f.get('mustPlay'),doNotPlay:f.get('doNotPlay'),playlist:f.get('playlist'),submitted:event.submitter?.name==='submit',timeline:[...moments.children].map(row=>{const item=readMoment(row);return {...item,detail:momentTitle(item)};})};if(weddingController){payload.wedding=weddingController.read();payload.answers=p.answers;}else {payload.answers={...p.answers};for(const k of answerKeys){if(f.has('answer_'+k))payload.answers[k]=f.get('answer_'+k);}}const buttons=form.querySelectorAll('[type=submit]');buttons.forEach(b=>b.disabled=true);try{const data=await api(prefix+'/plan','PUT',payload);p=data.plan;const savedNotice=app.querySelector('[data-planner-save-status]');if(savedNotice)savedNotice.textContent='Planner: '+data.event.plannerStatus;onDirty(false);document.querySelector('#planHint').textContent=p.submitted?'Submitted for DJ review. Saving a new draft reopens your planner.':'Draft saved. Submit when your plans are ready for DJ review.';document.querySelector('#planState').textContent=(payload.submitted?'Submitted for DJ review':'Draft saved')+' · Last saved '+new Date(p.savedAt).toLocaleString();message(payload.submitted?'Your planner is ready for DJ review.':'Your draft has been saved.');}catch(err){message(err.message,true,err.field);}finally{buttons.forEach(b=>b.disabled=false);}};
  const savedNotice=document.createElement('p');savedNotice.className='planner-save-status';savedNotice.dataset.plannerSaveStatus='';savedNotice.textContent='Planner: '+e.plannerStatus;app.querySelector('.client-plan-intro').append(savedNotice);
  if(admin){const refresh=async()=>{const a=await api(prefix+'/access');const target=document.querySelector('#members');target.innerHTML=a.members.map(m=>`<div class="event"><span>${esc(m.email)}${m.accessMode==='contract'?' · Contract signing only':' · Planner access'}</span><button type="button" class="secondary" data-email="${esc(m.email)}">Revoke access</button></div>`).join('')||'<p>No client accounts have access yet.</p>';target.querySelectorAll('button').forEach(b=>b.onclick=async()=>{try{await api(prefix+'/access','DELETE',{email:b.dataset.email});await refresh();message('Client access revoked.');}catch(err){message(err.message,true,err.field);}});};await refresh();document.querySelector('#access').onsubmit=async event=>{event.preventDefault();try{const email=event.currentTarget.elements.email.value,workspace=app.querySelector('#contractWorkspace'),signer=workspace?.querySelector('#issueContract [name=email]'),other=workspace?.dataset.primaryEmail&&email.toLowerCase()!==workspace.dataset.primaryEmail;const r=await api(prefix+'/access','POST',{email,...(other?{scope:'contract',name:signer?.selectedOptions[0]?.textContent.split(' — ')[0]||email}:{})});const target=document.querySelector('#invitation');target.textContent=r.message;if(r.token){const input=document.createElement('input');input.readOnly=true;input.setAttribute('aria-label','Private invitation link');const appUrl=(location.origin+location.pathname).replace(/index\.(php|html)$/i,'');input.value=appUrl+'#invite/'+r.token;target.append(input);}await refresh();}catch(err){message(err.message,true,err.field);}};}
  }
