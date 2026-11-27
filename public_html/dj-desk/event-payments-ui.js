@@ -7,25 +7,23 @@ export function mountEventPayments({root,event,api,esc,money,message,onUpdated})
       '<h3>Manual payment records</h3>'+
       '<p>Record a check when it arrives. A check changes the event balance only after you mark it cleared. Cash and money orders count immediately when received.</p>'+
       (event.type==='School dance'?'<p>Use the school invoice page for school checks.</p>':'')+
-      '<form class="grid" data-payment-form>'+
+      '<div class="grid" data-payment-form role="group" aria-label="Record a manual payment">'+
         '<label>Payment method<select name="method"><option>Check</option><option>Cash</option><option>Money order</option></select></label>'+
         '<label>Amount ($)<input name="amount" type="number" min="0.01" max="1000000" step="0.01" required></label>'+
         '<label>Date received<input name="receivedOn" type="date" value="'+dateValue()+'" required></label>'+
         '<label>Apply payment to<select name="appliesTo"><option value="balance">Event balance</option><option value="retainer">Unpaid retainer</option></select></label>'+
         '<label data-reference-label>Check number<input name="reference" maxlength="100" required></label>'+
-        '<button class="button secondary" type="submit">Record payment</button>'+
+        '<button class="button secondary" type="button" data-payment-submit>Record payment</button>'+
         '<small data-payment-error role="status"></small>'+
-      '</form><div data-payment-list>Loading payment records…</div>'+
+      '</div><div data-payment-list>Loading payment records…</div>'+
     '</section>');
   const box=root.querySelector('[data-event-payments]');
   const form=box.querySelector('[data-payment-form]');
   const method=form.elements.method;
-  const reference=form.elements.reference;
   const referenceLabel=form.querySelector('[data-reference-label]');
   const statusText=status=>status==='Received'?'Check received · awaiting clearance':status==='Cleared'?'Cleared':'Returned';
   method.onchange=()=>{
     const isCheck=method.value==='Check';
-    reference.required=isCheck;
     referenceLabel.innerHTML=(isCheck?'Check number':'Reference / note')+'<input name="reference" maxlength="100" '+(isCheck?'required':'')+'>';
   };
   async function load(){
@@ -51,18 +49,20 @@ export function mountEventPayments({root,event,api,esc,money,message,onUpdated})
     });
   }
   method.dispatchEvent(new Event('change'));
-  form.addEventListener('submit',async e=>{
-    e.preventDefault();
-    const submit=form.querySelector('[type=submit]'),error=box.querySelector('[data-payment-error]');
+  form.querySelector('[data-payment-submit]').addEventListener('click',async()=>{
+    const submit=form.querySelector('[data-payment-submit]'),error=box.querySelector('[data-payment-error]');
     submit.disabled=true;error.textContent='';
     try{
-      const data=Object.fromEntries(new FormData(form));
+      const data=Object.fromEntries([...form.querySelectorAll('[name]')].map(field=>[field.name,field.value]));
       data.amount=Number(data.amount);
       const result=await api(endpoint,'POST',data);
       message(result.status==='Received'?'Check recorded. It will count toward the balance after it clears.':'Payment recorded and applied to the event balance.');
-      form.reset();form.elements.receivedOn.value=dateValue();method.dispatchEvent(new Event('change'));
+      form.querySelector('[name=amount]').value='';
+      form.querySelector('[name=reference]').value='';
+      form.querySelector('[name=receivedOn]').value=dateValue();
       await load();
       await onUpdated?.();
+      submit.disabled=false;
     }catch(err){error.textContent=err.message;message(err.message,true);submit.disabled=false;}
   });
   load().catch(error=>{box.querySelector('[data-payment-list]').textContent='Payment history could not be loaded: '+error.message;});
