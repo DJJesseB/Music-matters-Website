@@ -301,6 +301,10 @@ export function musicUI({api, app, head, esc, date, message}) {
                     <div class="music-undo"><span data-action-feedback role="status"></span>
                         <button type="button" class="secondary" data-undo hidden>Undo</button></div>
                 </div>
+                <section class="card music-top-votes" aria-labelledby="top-votes-title">
+                    <div class="music-top-votes-heading"><div><h2 id="top-votes-title">Top 3 by guest votes</h2><p>Live ranking of active requests</p></div><span class="badge purple">LIVE</span></div>
+                    <ol data-top-votes aria-live="polite"><li class="music-empty">Waiting for guest votes.</li></ol>
+                </section>
                 <section class="card" data-kiosk-panel hidden aria-labelledby="kiosk-devices-title">
                     <h2 id="kiosk-devices-title">Request kiosks</h2>
                     <div data-kiosks></div>
@@ -459,6 +463,16 @@ export function musicUI({api, app, head, esc, date, message}) {
             const serialized = JSON.stringify([data.requests, data.counts, sortByVotes, data.config.lifecycle.state]);
             if (serialized === previousRows) return;
             previousRows = serialized;
+            const topVoted = data.requests
+                .filter(song => ['Pending', 'Approved'].includes(song.status) && Number(song.votes || 0) > 0)
+                .sort((a, b) => Number(b.votes || 0) - Number(a.votes || 0)
+                    || String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+                .slice(0, 3);
+            find('[data-top-votes]').innerHTML = topVoted.length
+                ? topVoted.map((song, index) => '<li><strong>#' + (index + 1) + ' · ' + esc(song.title) + '</strong>'
+                    + '<span>' + esc(song.artist) + '</span><small>' + Number(song.votes) + (Number(song.votes) === 1 ? ' vote' : ' votes')
+                    + ' · ' + esc(song.status) + '</small></li>').join('')
+                : '<li class="music-empty">No active requests have votes yet.</li>';
             for (const status of ['Pending', 'Approved', 'Played', 'Denied']) {
                 const rows = data.requests.filter(song => song.status === status);
                 if (status === 'Pending' && sortByVotes) rows.sort((a, b) => Number(b.votes || 0) - Number(a.votes || 0));
