@@ -226,9 +226,9 @@ final class DJ_GoogleCalendar {
     private static function calendarList(): array {
         $all=[];$token=null;do{$path='users/me/calendarList?maxResults=250'.($token?'&pageToken='.rawurlencode($token):'');$res=self::api('GET',$path)['body'];foreach(($res['items']??[]) as $item)$all[]=['id'=>$item['id']??'','name'=>$item['summary']??'Calendar','primary'=>!empty($item['primary']),'accessRole'=>$item['accessRole']??''];$token=$res['nextPageToken']??null;}while($token);return $all;
     }
-    private static function startOAuth(): void {
+    private static function startOAuth(array $session): void {
         $env=self::assertEnvironment();$cfg=self::config();if(empty($cfg['client_id'])||empty($cfg['client_secret']))throw new RuntimeException('Enter and save your Google OAuth Client ID and Client Secret first.');
-        $session=require_admin();$state=bin2hex(random_bytes(32));
+        $state=bin2hex(random_bytes(32));
         DJ_Database::insert(self::table('states'),['state'=>$state,'environment'=>$env,'admin_id'=>$session['user']['id'],'expires_at'=>time()+600]);
         $params=['client_id'=>$cfg['client_id'],'redirect_uri'=>self::redirectUri(),'response_type'=>'code','scope'=>'openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly','access_type'=>'offline','prompt'=>'consent','state'=>$state];
         header('Location: https://accounts.google.com/o/oauth2/v2/auth?'.http_build_query($params));exit;
@@ -248,7 +248,7 @@ final class DJ_GoogleCalendar {
         }catch(Throwable $e){self::saveError(self::cleanError($e->getMessage()));self::callbackPage(false,$e->getMessage());}
     }
     private static function callbackPage(bool $ok,string $message): void {
-        header('Content-Type: text/html; charset=utf-8');$safe=htmlspecialchars($message,ENT_QUOTES,'UTF-8');$url=htmlspecialchars(dirname(self::redirectUri(),2).'/index.php#settings',ENT_QUOTES,'UTF-8');
+        header('Content-Type: text/html; charset=utf-8');$safe=htmlspecialchars($message,ENT_QUOTES,'UTF-8');$url=htmlspecialchars(dirname(self::redirectUri(),3).'/index.php#settings',ENT_QUOTES,'UTF-8');
         echo '<!doctype html><meta charset="utf-8"><title>DJ Desk Calendar</title><main style="font:16px system-ui;max-width:560px;margin:12vh auto;padding:24px;background:#111;color:#eee;border:1px solid #46513a;border-radius:12px"><h1 style="color:'.($ok?'#b6ff35':'#ff8a96').'">'.($ok?'Connected':'Connection issue').'</h1><p>'.$safe.'</p><a style="color:#b6ff35" href="'.$url.'">Return to DJ Desk Settings</a></main>';exit;
     }
     private static function dateRange(array $event,array $s): array {
@@ -308,10 +308,12 @@ final class DJ_GoogleCalendar {
         catch(Throwable $e){$message=self::cleanError($e->getMessage());self::saveError($message);return ['status'=>'error','error'=>$message,'conflicts'=>[]];}
     }
     public static function route(string $path,string $method,array $input): bool {
+        // Older copies of the Calendar settings module still use this URL.
+        if ($path === 'google-calendar/connect' && $method === 'GET') $path = 'admin/google-calendar/connect';
         if(strpos($path,'admin/google-calendar/')!==0 && $path!=='google-calendar/callback')return false;
         if($path==='google-calendar/callback'&&$method==='GET'){self::schema();self::callback();}
-        if($path==='admin/google-calendar/connect'&&$method==='GET'){self::assertEnvironment();self::schema();self::startOAuth();}
-        require_db();require_admin();self::assertEnvironment();self::schema();
+        require_db();$session=require_admin();self::assertEnvironment();self::schema();
+        if($path==='admin/google-calendar/connect'&&$method==='GET')self::startOAuth($session);
         if($path==='admin/google-calendar/status'&&$method==='GET')json_response(self::settingsView());
         if($path==='admin/google-calendar/calendars'&&$method==='GET')json_response(self::calendarList());
         if($path==='admin/google-calendar/settings'&&$method==='POST'){
