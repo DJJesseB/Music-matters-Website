@@ -67,34 +67,25 @@ With love,
 The happy couple
 
 With a little microphone wisdom from DJ Jesse B — the right music, the right moment.`;
-export function speechGuideMailto(recipients=''){
- const addresses=recipients.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
- if(addresses.length>30||addresses.some(v=>!/^[^\s@<>?,;&]+@[^\s@<>?,;&]+\.[^\s@<>?,;&]+$/.test(v)))throw Error('Enter valid email addresses separated by commas.');
- return 'mailto:?'+Object.entries({...(addresses.length?{bcc:addresses.join(',')}:{}),subject:speechGuideSubject,body:speechGuideText}).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
-}
 export function openSpeechGuide(trigger){
  const dialog=document.createElement('dialog');dialog.className='speech-guide-dialog';dialog.setAttribute('aria-labelledby','speech-guide-heading');
- dialog.innerHTML='<button type="button" class="secondary" data-close>Close ×</button><span class="badge purple">FOR YOUR WEDDING VIPs</span><h2 id="speech-guide-heading">You’ve got the mic! 🎤</h2><p>Share a little inspiration with the people giving your toasts. Review the letter below, then open an email draft for your VIPs.</p><article class="speech-guide-letter"></article><form><label>VIP email addresses (optional)<input name="recipients" type="text" placeholder="alex@example.com, sam@example.com" autocomplete="off"></label><p><small>Addresses are placed in BCC for privacy and are not saved. You can also add recipients in your email app.</small></p><div class="speech-guide-actions"><button type="submit">Open email draft ↗</button><button type="button" class="secondary" data-copy>Copy letter</button></div><p role="status" data-share-status>Your email app opens with the letter filled in. Review it and press Send there. If it does not open or the letter is incomplete, use Copy letter and paste it into your email.</p></form>';
+ dialog.innerHTML='<button type="button" class="secondary" data-close>Close ×</button><h2 id="speech-guide-heading">Share with your VIPs</h2><p>Copy the speech guide, then paste it into a text, group chat, or email to the people giving toasts.</p><div class="speech-guide-actions"><button type="button" data-copy autofocus>Copy letter</button></div><p role="status" data-share-status></p><textarea data-manual-copy aria-label="Speech guide letter" readonly hidden rows="6"></textarea><details><summary>Preview letter</summary><article class="speech-guide-letter"></article></details>';
  dialog.querySelector('article').textContent=speechGuideText;document.body.append(dialog);const overflow=document.body.style.overflow;document.body.style.overflow='hidden';
  const status=dialog.querySelector('[data-share-status]');dialog.querySelector('[data-close]').onclick=()=>dialog.close();
- dialog.querySelector('form').onsubmit=event=>{
-  event.preventDefault();
-  const recipients=dialog.querySelector('[name=recipients]');
+ const letter=speechGuideSubject+'\n\n'+speechGuideText;
+ const manualCopy=dialog.querySelector('[data-manual-copy]');
+ dialog.querySelector('[data-copy]').onclick=async()=>{
   try{
-   const draft=document.createElement('a');
-   draft.href=speechGuideMailto(recipients.value);
-   draft.target='_blank';
-   draft.rel='noopener noreferrer';
-   draft.hidden=true;
-   dialog.append(draft);
-   draft.click();
-   draft.remove();
-   status.textContent='Email draft requested. Review the recipients and letter in your email app, then press Send. Nothing has been sent by this planner.';
-  }catch(error){
-   status.textContent=error.message;
-   recipients.focus();
+   await navigator.clipboard.writeText(letter);
+   manualCopy.hidden=true;
+   status.textContent='Letter copied. Paste it into your message.';
+  }catch{
+   manualCopy.value=letter;
+   manualCopy.hidden=false;
+   manualCopy.focus();
+   manualCopy.select();
+   status.textContent='Copy the selected letter, then paste it into your message.';
   }
  };
- dialog.querySelector('[data-copy]').onclick=async()=>{try{await navigator.clipboard.writeText(speechGuideSubject+'\n\n'+speechGuideText);status.textContent='Letter copied. Paste it into your email and send it to your VIPs.';}catch{const text=document.createElement('textarea');text.value=speechGuideText;text.readOnly=true;dialog.querySelector('form').append(text);text.select();status.textContent='Select and copy the letter below, then paste it into your email.';}};
  const onNavigate=()=>dialog.close();window.addEventListener('hashchange',onNavigate,{once:true});dialog.addEventListener('close',()=>{window.removeEventListener('hashchange',onNavigate);document.body.style.overflow=overflow;dialog.remove();if(trigger.isConnected)trigger.focus();},{once:true});dialog.showModal();
 }
