@@ -60,7 +60,7 @@ if (!$isResetRequested && !empty($config['configured'])) {
             tipLink: <?php echo json_encode($tipLink); ?>
         };
     </script>
-    <script type="module" src="./app.js?v=257"></script>
+    <script type="module" src="./app.js?v=258"></script>
 <link rel="stylesheet" href="/back-to-top.css?v=2"></head>
 <body>
     <aside>
