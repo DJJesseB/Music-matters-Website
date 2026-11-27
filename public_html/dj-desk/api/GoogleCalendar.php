@@ -19,9 +19,72 @@ final class DJ_GoogleCalendar {
             DJ_Database::insert(self::table('settings'), ['environment'=>$env,'calendar_id'=>'','calendar_name'=>'','setup_buffer'=>60,'breakdown_buffer'=>30,'timezone'=>'America/New_York','enabled'=>1,'last_synced_at'=>'','last_error'=>'']);
         }
     }
-    private static function configPath(): string { return dirname(__DIR__) . '/data/google-calendar-secrets.php'; }
+    private const STAGING_STORAGE_ERROR = 'Cannot save calendar credentials. Ask the hosting administrator to check DJ Desk’s private Staging storage.';
+
+    private static function legacyConfigPath(): string {
+        return dirname(__DIR__) . '/data/google-calendar-secrets.php';
+    }
+
+    private static function stagingStorageDir(): string {
+        // SiteGround uses public_html for both sites and subdomains. Walk past
+        // the outermost public_html in case the Staging root is nested.
+        $webRoot = null;
+        for ($dir = dirname(__DIR__, 2); $dir !== dirname($dir); $dir = dirname($dir)) {
+            if (basename($dir) === 'public_html') {
+                $webRoot = $dir;
+            }
+        }
+        if ($webRoot === null) {
+            throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+        }
+        $storage = dirname($webRoot) . '/.dj-desk-staging';
+        $documentRoot = empty($_SERVER['DOCUMENT_ROOT']) ? false : realpath($_SERVER['DOCUMENT_ROOT']);
+        if ($documentRoot !== false && strpos($storage . '/', rtrim($documentRoot, '/') . '/') === 0) {
+            throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+        }
+        return $storage;
+    }
+
+    private static function stagingConfig(string $dir): ?array {
+        if (@is_link($dir)) {
+            throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+        }
+        if (!@is_dir($dir)) {
+            return null;
+        }
+        $mode = @fileperms($dir);
+        if ($mode === false || ($mode & 0777) !== 0700 || !@is_readable($dir) || !@is_executable($dir)) {
+            throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+        }
+        $path = $dir . '/google-calendar-secrets.json';
+        if (@is_link($path)) {
+            throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+        }
+        if (!@file_exists($path)) {
+            return null;
+        }
+        $mode = @fileperms($path);
+        if (!@is_file($path) || $mode === false || ($mode & 0777) !== 0600) {
+            throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+        }
+        $body = @file_get_contents($path);
+        $config = $body === false ? null : json_decode($body, true);
+        if (!is_array($config) || empty($config['client_id']) || empty($config['client_secret']) || empty($config['encryption_key'])) {
+            throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+        }
+        return $config;
+    }
+
     private static function config(): array {
-        $path=self::configPath();
+        if (self::env() === 'staging') {
+            $config = self::stagingConfig(self::stagingStorageDir());
+            if ($config !== null) return $config;
+        }
+        return self::legacyConfig();
+    }
+
+    private static function legacyConfig(): array {
+        $path=self::legacyConfigPath();
         if (!is_file($path)) return [];
         $cfg=require $path;
         return is_array($cfg)?$cfg:[];
@@ -43,8 +106,7 @@ final class DJ_GoogleCalendar {
         $s=self::currentSettings(); if (!$s) return;
         DJ_Database::update(self::table('settings'),['last_error'=>self::cleanError($error)],['environment'=>self::env()]);
     }
-    private static function configWrite(array $incoming): void {
-        $current=self::config();
+    private static function updatedConfig(array $incoming, array $current): array {
         $id=trim((string)($incoming['clientId']??''));
         $secret=trim((string)($incoming['clientSecret']??''));
         $clientId=$id!==''?$id:(string)($current['client_id']??'');
@@ -52,9 +114,56 @@ final class DJ_GoogleCalendar {
         if ($clientId==='' || $clientSecret==='') throw new RuntimeException('Enter the Google OAuth Client ID and Client Secret first.');
         $key=(string)($current['encryption_key']??'');
         if ($key==='') $key=base64_encode(random_bytes(32));
-        $path=self::configPath(); $body="<?php\n// Private DJ Desk Google Calendar credentials. Never commit this file.\nreturn ".var_export(['client_id'=>$clientId,'client_secret'=>$clientSecret,'encryption_key'=>$key],true).";\n";
+        return ['client_id'=>$clientId,'client_secret'=>$clientSecret,'encryption_key'=>$key];
+    }
+
+    private static function configWrite(array $incoming): void {
+        if (self::env() === 'staging') {
+            self::writeStagingConfig($incoming);
+            return;
+        }
+
+        $config = self::updatedConfig($incoming, self::config());
+        $path=self::legacyConfigPath(); $body="<?php\n// Private DJ Desk Google Calendar credentials. Never commit this file.\nreturn ".var_export($config,true).";\n";
         if (file_put_contents($path,$body,LOCK_EX)===false) throw new RuntimeException('Cannot write calendar credentials. Check DJ Desk folder permissions.');
         @chmod($path,0600); if (function_exists('opcache_invalidate')) @opcache_invalidate($path,true);
+    }
+
+    private static function writeStagingConfig(array $incoming): void {
+        $dir = self::stagingStorageDir();
+        if (@is_link($dir) || (!@is_dir($dir) && !@mkdir($dir, 0700) && !@is_dir($dir))) {
+            throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+        }
+        // Check the directory before opening a lock or creating a temporary file.
+        $mode = @fileperms($dir);
+        if ($mode === false || ($mode & 0777) !== 0700 || !@is_executable($dir) || !@is_writable($dir)) {
+            throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+        }
+        $lockPath = $dir . '/.lock';
+        $lock = @is_link($lockPath) ? false : @fopen($lockPath, 'c');
+        if ($lock === false) {
+            throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+        }
+        $temp = false;
+        try {
+            if (!@chmod($lockPath, 0600) || !@flock($lock, LOCK_EX)) {
+                throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+            }
+            clearstatcache(true);
+            $current = self::stagingConfig($dir) ?? self::legacyConfig();
+            $config = self::updatedConfig($incoming, $current);
+            $body = json_encode($config, JSON_THROW_ON_ERROR);
+            $temp = @tempnam($dir, '.calendar-');
+            if ($temp === false || dirname($temp) !== $dir || !@chmod($temp, 0600)
+                || @file_put_contents($temp, $body) !== strlen($body)
+                || !@rename($temp, $dir . '/google-calendar-secrets.json')) {
+                throw new RuntimeException(self::STAGING_STORAGE_ERROR);
+            }
+            $temp = false;
+        } finally {
+            if ($temp !== false) @unlink($temp);
+            fclose($lock);
+        }
     }
     private static function key(): string {
         $raw=base64_decode((string)(self::config()['encryption_key']??''),true);
@@ -192,8 +301,10 @@ final class DJ_GoogleCalendar {
         $err=count($result['errors'])?json_encode($result['errors']):'';DJ_Database::update(self::table('settings'),['last_synced_at'=>gmdate('Y-m-d H:i:s'),'last_error'=>$err],['environment'=>self::env()]);return $result;
     }
     public static function onEventSaved(array $event): array {
-        if(self::env()==='unknown'||!self::config()||!self::currentToken())return ['status'=>'not-connected','conflicts'=>[]];
-        try{$result=self::syncOne($event);DJ_Database::update(self::table('settings'),['last_synced_at'=>gmdate('Y-m-d H:i:s'),'last_error'=>''],['environment'=>self::env()]);return $result;}
+        try{
+            if(self::env()==='unknown'||!self::config()||!self::currentToken())return ['status'=>'not-connected','conflicts'=>[]];
+            $result=self::syncOne($event);DJ_Database::update(self::table('settings'),['last_synced_at'=>gmdate('Y-m-d H:i:s'),'last_error'=>''],['environment'=>self::env()]);return $result;
+        }
         catch(Throwable $e){$message=self::cleanError($e->getMessage());self::saveError($message);return ['status'=>'error','error'=>$message,'conflicts'=>[]];}
     }
     public static function route(string $path,string $method,array $input): bool {

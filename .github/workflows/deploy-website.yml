@@ -36,6 +36,15 @@ jobs:
           test -s public_html/style.css
           test -s public_html/site.js
           test ! -e public_html/.git
+      - name: Test Staging Calendar credential storage
+        if: github.ref_name == 'Staging'
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l public_html/dj-desk/api/GoogleCalendar.php
+          fixture="$(mktemp -d)"
+          trap 'rm -rf "$fixture"' EXIT
+          php tests/staging-calendar-storage.php "$fixture"
       - name: Check deployment configuration
         env:
           FTP_HOST: ${{ secrets.SITE_FTPS_HOST }}
