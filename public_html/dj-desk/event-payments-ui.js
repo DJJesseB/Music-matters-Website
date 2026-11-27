@@ -24,7 +24,7 @@ export function mountEventPayments({root,event,api,esc,money,message,onUpdated})
   const statusText=status=>status==='Received'?'Check received · awaiting clearance':status==='Cleared'?'Cleared':'Returned';
   method.onchange=()=>{
     const isCheck=method.value==='Check';
-    referenceLabel.innerHTML=(isCheck?'Check number':'Reference / note')+'<input name="reference" maxlength="100" '+(isCheck?'required':'')+'>';
+    referenceLabel.innerHTML=(isCheck?'Check number':'Reference / note')+'<input data-payment-field="reference" maxlength="100" '+(isCheck?'required':'')+'>';
   };
   async function load(){
     const rows=await api(endpoint);
