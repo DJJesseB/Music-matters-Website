@@ -925,10 +925,22 @@ if ($path === 'portal/events' && $method === 'GET') {
 
 if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/plan$#', $path, $m)) {
     require_db();
-    require_auth();
+    $session = $m[1] === 'admin' ? require_admin() : require_auth();
     $id = $m[2];
     $event = DJ_Database::get_event($id);
     if (!$event) json_error('Event not found', 404);
+
+    if ($session['user']['role'] !== 'admin') {
+        $email = (string)($session['user']['email'] ?? '');
+        $isPrimary = $email !== '' && strcasecmp($email, (string)($event['client']['email'] ?? '')) === 0;
+        $memberships = DJ_Database::get_table_name('memberships');
+        if (!$isPrimary && !DJ_Database::get_var(
+            "SELECT 1 FROM $memberships WHERE event_id = ? AND user_id = ?",
+            [$id, $session['user']['id']]
+        )) {
+            json_error('Planner access required', 403);
+        }
+    }
 
     $plans_table = DJ_Database::get_table_name('portal_plans');
 
@@ -990,6 +1002,13 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/plan$#', $path, $m)) {
         $oldVersion = $row ? (int)$row['version'] : 0;
         if (isset($input['version']) && (int)$input['version'] !== $oldVersion) {
             json_error('This planner changed. Reload before saving.', 409);
+        }
+
+        if ($row && is_array($input['wedding']['values'] ?? null)) {
+            $previous = json_decode($row['body'], true);
+            if (is_array($previous['wedding']['values'] ?? null)) {
+                $input['wedding']['values'] += $previous['wedding']['values'];
+            }
         }
 
         $input['savedAt'] = DJ_Database::now();
