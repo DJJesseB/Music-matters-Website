@@ -1,4 +1,4 @@
-import {openSpeechGuide} from './speech-guide.js?v=180';
+import {openSpeechGuide} from './speech-guide.js?v=181';
 import {includedWeddingCoverage} from './wedding-packages.js?v=180';
 import {timeField,bindTimeFields,readTime,writeTime,setTimeDisabled} from './time-input.js?v=180';
 import {receptionOffsets,receptionEstimate,lastDanceTime} from './reception-timing.js?v=180';

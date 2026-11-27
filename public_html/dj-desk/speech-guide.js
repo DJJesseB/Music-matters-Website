@@ -77,7 +77,24 @@ export function openSpeechGuide(trigger){
  dialog.innerHTML='<button type="button" class="secondary" data-close>Close ×</button><span class="badge purple">FOR YOUR WEDDING VIPs</span><h2 id="speech-guide-heading">You’ve got the mic! 🎤</h2><p>Share a little inspiration with the people giving your toasts. Review the letter below, then open an email draft for your VIPs.</p><article class="speech-guide-letter"></article><form><label>VIP email addresses (optional)<input name="recipients" type="text" placeholder="alex@example.com, sam@example.com" autocomplete="off"></label><p><small>Addresses are placed in BCC for privacy and are not saved. You can also add recipients in your email app.</small></p><div class="speech-guide-actions"><button type="submit">Open email draft ↗</button><button type="button" class="secondary" data-copy>Copy letter</button></div><p role="status" data-share-status>Your email app opens with the letter filled in. Review it and press Send there. If it does not open or the letter is incomplete, use Copy letter and paste it into your email.</p></form>';
  dialog.querySelector('article').textContent=speechGuideText;document.body.append(dialog);const overflow=document.body.style.overflow;document.body.style.overflow='hidden';
  const status=dialog.querySelector('[data-share-status]');dialog.querySelector('[data-close]').onclick=()=>dialog.close();
- dialog.querySelector('form').onsubmit=event=>{event.preventDefault();try{const link=speechGuideMailto(dialog.querySelector('[name=recipients]').value);window.location.href=link;status.textContent='Email draft requested. Review the recipients and letter in your email app, then press Send. Nothing has been sent by this planner.';}catch(error){status.textContent=error.message;dialog.querySelector('[name=recipients]').focus();}};
+ dialog.querySelector('form').onsubmit=event=>{
+  event.preventDefault();
+  const recipients=dialog.querySelector('[name=recipients]');
+  try{
+   const draft=document.createElement('a');
+   draft.href=speechGuideMailto(recipients.value);
+   draft.target='_blank';
+   draft.rel='noopener noreferrer';
+   draft.hidden=true;
+   dialog.append(draft);
+   draft.click();
+   draft.remove();
+   status.textContent='Email draft requested. Review the recipients and letter in your email app, then press Send. Nothing has been sent by this planner.';
+  }catch(error){
+   status.textContent=error.message;
+   recipients.focus();
+  }
+ };
  dialog.querySelector('[data-copy]').onclick=async()=>{try{await navigator.clipboard.writeText(speechGuideSubject+'\n\n'+speechGuideText);status.textContent='Letter copied. Paste it into your email and send it to your VIPs.';}catch{const text=document.createElement('textarea');text.value=speechGuideText;text.readOnly=true;dialog.querySelector('form').append(text);text.select();status.textContent='Select and copy the letter below, then paste it into your email.';}};
  const onNavigate=()=>dialog.close();window.addEventListener('hashchange',onNavigate,{once:true});dialog.addEventListener('close',()=>{window.removeEventListener('hashchange',onNavigate);document.body.style.overflow=overflow;dialog.remove();if(trigger.isConnected)trigger.focus();},{once:true});dialog.showModal();
 }
