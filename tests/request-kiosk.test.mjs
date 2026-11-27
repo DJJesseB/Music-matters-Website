@@ -15,14 +15,14 @@ const pin = String(randomInt(100000, 1000000));
 const wrongPin = String(100000 + (Number(pin) - 99999) % 900000);
 const adminCredentials = {email: 'kiosk-test@example.com', password: randomUUID()};
 
-test('request kiosk and existing guest and DJ flows', async () => {
+test('request kiosk, inquiry review, and existing guest and DJ flows', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dj-request-kiosk-'));
     const app = join(root, 'dj-desk');
     let server;
     let serverLog = '';
     try {
         await mkdir(join(app, 'api'), {recursive: true});
-        for (const file of ['Auth.php', 'Database.php', 'GoogleCalendar.php', 'index.php', 'Mailer.php', 'PaperContracts.php', 'QRCode.php', 'RequestKiosk.php', 'RequestLifecycle.php', 'SchoolInvoices.php']) {
+        for (const file of ['Auth.php', 'Database.php', 'EventPayments.php', 'GoogleCalendar.php', 'index.php', 'InquiryReview.php', 'Mailer.php', 'PaperContracts.php', 'QRCode.php', 'RequestKiosk.php', 'RequestLifecycle.php', 'SchoolInvoices.php']) {
             await cp(new URL('../public_html/dj-desk/api/' + file, import.meta.url), join(app, 'api', file));
         }
         for (const file of ['kiosk.html', 'kiosk.js', 'kiosk.css', 'kiosk.webmanifest']) {
@@ -76,6 +76,52 @@ test('request kiosk and existing guest and DJ flows', async () => {
         }
         const staffLogin = await call('auth/login', {body: adminCredentials});
         const staff = {cookie: staffLogin.cookies[0].split(';')[0], csrf: staffLogin.result.csrf};
+        const original = await call('intake/requests', {body: {
+            key: randomUUID(), name: 'Test Inquiry', email: 'inquiry@example.com', type: 'Private party', date: '2031-01-10'
+        }});
+        const inquiryId = original.result.reference;
+        const adminInquiry = 'admin/requests/' + inquiryId + '/';
+        const customerUpdate = 'intake/requests/' + inquiryId + '/details';
+        const inquiry = async () => (await call('admin/requests', staff)).result.find(row => row.id === inquiryId);
+        const travel = {outbound: '125', return: '125', setup: '120', breakdown: '50', scheduleChecked: true, lodging: 'Customer provides'};
+        await call(adminInquiry + 'approve', {...staff, body: {version: 1, travel}, expect: 422});
+        await call(adminInquiry + 'approve', {...staff, body: {version: 1, travel, acknowledgeReview: true}, expect: 422});
+        const {result: link} = await call(adminInquiry + 'request-information', {...staff, body: {version: 1}});
+        assert.equal((await inquiry()).state, 'Awaiting information');
+        assert.equal((await inquiry()).informationRequest, undefined);
+        await call(customerUpdate, {body: {token: 'a'.repeat(64)}, expect: 404});
+        const {result: preview} = await call(customerUpdate, {body: {token: link.token, preview: true}});
+        assert.equal(preview.date, '2031-01-10');
+        assert.equal(preview.email, undefined);
+        await call(customerUpdate, {body: {token: link.token, venue: 'Fixture Hall', address: '10 Main St, Albany, NY', startTime: '17:00', endTime: '23:30'}});
+        await call(customerUpdate, {body: {token: link.token}, expect: 404});
+        assert.equal((await inquiry()).state, 'Ready for review');
+        await call(adminInquiry + 'approve', {...staff, body: {version: 2, travel}, expect: 409});
+        await call(adminInquiry + 'approve', {...staff, body: {version: 3, travel: {...travel, lodging: 'Waive'}}, expect: 422});
+        await call(adminInquiry + 'approve', {...staff, body: {version: 3, travel}, expect: 409});
+        await call(adminInquiry + 'approve', {...staff, body: {version: 3, travel, acknowledgeTravel: true, holdHours: 24}});
+        const preliminary = await inquiry();
+        assert.equal(preliminary.state, 'Preliminarily approved');
+        assert.equal(preliminary.eventId, null);
+        assert.ok(preliminary.holdUntil);
+        assert.deepEqual(preliminary.travelReview.warnings, ['Extended total day', 'Late arrival home']);
+        await call(adminInquiry + 'revise-quote', {...staff, body: {version: 4, amount: '2150.00', reason: 'Revised coverage'}});
+        const revised = await inquiry();
+        assert.equal(revised.quote.total, 2150);
+        assert.equal(revised.travelReview, undefined);
+        await call(adminInquiry + 'prepare-contract', {...staff, body: {version: 5}, expect: 409});
+        await call(adminInquiry + 'approve', {...staff, body: {version: 5, travel, acknowledgeTravel: true}});
+        await call(adminInquiry + 'withdraw', {...staff, body: {version: 6, reason: 'Confirming details with venue'}});
+        assert.equal((await inquiry()).state, 'Withdrawn');
+        await call(adminInquiry + 'reopen', {...staff, body: {version: 7, reason: 'Venue confirmed'}});
+        await call(adminInquiry + 'approve', {...staff, body: {version: 8, travel, acknowledgeTravel: true}});
+        const {result: booking} = await call(adminInquiry + 'prepare-contract', {...staff, body: {version: 9}});
+        const {result: bookedEvent} = await call('events/' + booking.eventId, staff);
+        assert.equal(bookedEvent.status, 'Tentative');
+        assert.equal(bookedEvent.amount, 2150);
+        assert.equal(bookedEvent.address, '10 Main St, Albany, NY');
+        assert.equal(bookedEvent.startTime, '17:00');
+        assert.equal((await inquiry()).inquiryHistory.at(-1).action, 'Opened tentative booking for contract preparation');
         const currentTime = Math.floor(Date.now() / 1000);
         const local = stamp => new Date(stamp * 1000).toISOString().slice(0, 16);
         const {result: seeded} = await call('admin/music/events', staff);

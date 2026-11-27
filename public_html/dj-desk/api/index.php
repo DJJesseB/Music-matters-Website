@@ -2033,6 +2033,8 @@ function synthesize_quote(array $body): array {
     }
 }
 
+require_once __DIR__ . '/InquiryReview.php';
+
 if ($path === 'intake/requests' && $method === 'POST') {
     require_db();
     $reqs_table = DJ_Database::get_table_name('booking_requests');
@@ -2043,7 +2045,9 @@ if ($path === 'intake/requests' && $method === 'POST') {
         json_response(['reference' => $existing['id'], 'status' => 'Awaiting admin review']);
     }
 
-    if (empty($input['quote'])) {
+    unset($input['inquiryHistory'], $input['informationRequest'], $input['travelReview'], $input['holdUntil'], $input['declineResponse']);
+    $input = array_replace($input, DJ_InquiryReview::details($input));
+    if (empty($input['quote']) || !is_array($input['quote'])) {
         $input['quote'] = synthesize_quote($input);
     }
 
@@ -2052,13 +2056,36 @@ if ($path === 'intake/requests' && $method === 'POST') {
         'id' => $id,
         'submission_key' => $key,
         'body' => json_encode($input),
-        'state' => 'Pending',
+        'state' => DJ_InquiryReview::missing($input) ? 'Pending' : 'Ready for review',
         'event_id' => null,
         'version' => 1,
         'created_at' => DJ_Database::now()
     ]);
 
     json_response(['reference' => $id, 'status' => 'Awaiting admin review']);
+}
+
+if (preg_match('#^intake/requests/([a-f0-9-]+)/details$#D', $path, $match) && $method === 'POST') {
+    require_db();
+    $table = DJ_Database::get_table_name('booking_requests');
+    $row = DJ_Database::get_row("SELECT * FROM $table WHERE id = ?", [$match[1]]);
+    $body = json_decode($row['body'] ?? '', true) ?: [];
+    $request = $body['informationRequest'] ?? [];
+    $token = $input['token'] ?? '';
+    if (($row['state'] ?? '') !== 'Awaiting information' || !is_string($token) ||
+        !preg_match('/^[a-f0-9]{64}$/D', $token) || ($request['expiresAt'] ?? 0) <= time() ||
+        !hash_equals($request['tokenHash'] ?? '', hash('sha256', $token))) {
+        json_error('This update link is invalid or has expired. Contact DJ Jesse B for a new link.', 404);
+    }
+    if (!empty($input['preview'])) json_response(DJ_InquiryReview::details($body));
+    $body = array_replace($body, DJ_InquiryReview::details(array_replace($body, $input)));
+    unset($body['informationRequest'], $body['travelReview']);
+    $body = DJ_InquiryReview::audit($body, 'Customer updated details', 'Customer');
+    $state = DJ_InquiryReview::missing($body) ? 'Pending' : 'Ready for review';
+    if (!DJ_Database::update($table, ['body' => json_encode($body, JSON_THROW_ON_ERROR), 'state' => $state, 'version' => (int)$row['version'] + 1], ['id' => $row['id'], 'version' => $row['version']])) {
+        json_error('This inquiry changed. Contact DJ Jesse B for a new link.', 409);
+    }
+    json_response(['message' => 'Your information was saved for DJ review.']);
 }
 
 // Same-day commitments are treated conservatively: without reliable setup/travel
@@ -2080,15 +2107,16 @@ function request_availability(array $request, string $requestId, array $events, 
         ];
     }
     foreach ($pending as $row) {
-        if ($row['id'] === $requestId || $row['state'] !== 'Pending') continue;
+        if ($row['id'] === $requestId || !in_array($row['state'], ['Pending', 'Ready for review', 'Awaiting information', 'Preliminarily approved'], true)) continue;
         $body = json_decode($row['body'], true) ?: [];
-        if (($body['date'] ?? '') === $date) $otherRequests[] = ['name' => $body['name'] ?? 'Other inquiry'];
+        if (($body['date'] ?? '') === $date) {
+            $holdUntil = $row['state'] === 'Preliminarily approved' && !empty($body['holdUntil']) && strtotime($body['holdUntil']) > time() ? $body['holdUntil'] : null;
+            $otherRequests[] = ['name' => $body['name'] ?? 'Other inquiry', 'holdUntil' => $holdUntil];
+        }
     }
     $reasons = [];
     if ($conflicts) $reasons[] = 'Existing event on this date; verify commitments, setup and travel.';
     if ($otherRequests) $reasons[] = 'Another pending inquiry requests this date.';
-    if (empty($request['venue'])) $reasons[] = 'Venue not yet provided.';
-    if (empty($request['startTime']) || empty($request['endTime'])) $reasons[] = 'Event hours and travel/setup feasibility have not been verified.';
     return ['level' => $reasons ? 'review' : 'available', 'events' => $conflicts, 'requests' => $otherRequests, 'reasons' => $reasons];
 }
 
@@ -2101,6 +2129,7 @@ if ($path === 'admin/requests' && $method === 'GET') {
     $results = [];
     foreach ($rows as $r) {
         $b = json_decode($r['body'], true) ?: [];
+        unset($b['informationRequest']);
         if (empty($b['quote']) || empty($b['quote']['package'])) {
             $b['quote'] = synthesize_quote($b);
         }
@@ -2122,7 +2151,9 @@ if ($path === 'admin/requests' && $method === 'GET') {
             'phone' => $b['phone'] ?? ($b['clientPhone'] ?? ''),
             'venue' => $b['venue'] ?? '',
             'notes' => $b['notes'] ?? ($b['message'] ?? ''),
-            'state' => $r['state'],
+            'state' => $r['state'] === 'Pending' && !DJ_InquiryReview::missing($b) ? 'Ready for review' : $r['state'],
+            'missingDetails' => DJ_InquiryReview::missing($b),
+            'travelSettings' => DJ_InquiryReview::settings($config),
             'eventId' => $r['event_id'],
             'version' => (int)$r['version'],
             'createdAt' => $r['created_at'],
@@ -2133,9 +2164,10 @@ if ($path === 'admin/requests' && $method === 'GET') {
     json_response($results);
 }
 
-if (preg_match('#^admin/requests/([a-f0-9-]+)/(approve|decline|response)$#', $path, $m)) {
+if ($method === 'POST' && preg_match('#^admin/requests/([a-f0-9-]+)/(approve|prepare-contract|reopen|withdraw|revise-quote|decline|response|request-information|details|travel-preview)$#', $path, $m)) {
     require_db();
-    require_admin();
+    $admin = require_admin();
+    if (!hash_equals((string)$admin['csrf'], (string)($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) json_error('Refresh and try again.', 403);
     $id = $m[1];
     $action = $m[2];
     $reqs_table = DJ_Database::get_table_name('booking_requests');
@@ -2144,19 +2176,102 @@ if (preg_match('#^admin/requests/([a-f0-9-]+)/(approve|decline|response)$#', $pa
     if (!$row) json_error('Request not found', 404);
 
     $b = json_decode($row['body'], true) ?: [];
+    $active = in_array($row['state'], ['Pending', 'Ready for review', 'Awaiting information'], true) && empty($row['event_id']);
+    if ((int)($input['version'] ?? 0) !== (int)$row['version']) json_error('This inquiry changed. Refresh the list.', 409);
+    $actor = (string)($admin['user']['id'] ?? 'Admin');
+    $preliminary = $row['state'] === 'Preliminarily approved' && empty($row['event_id']);
+    $saveInquiry = function (array $body, string $state) use ($reqs_table, $id, $row): void {
+        if (!DJ_Database::update($reqs_table, ['body' => json_encode($body, JSON_THROW_ON_ERROR), 'state' => $state, 'version' => (int)$row['version'] + 1], ['id' => $id, 'version' => $row['version']])) {
+            json_error('This inquiry changed. Refresh the list.', 409);
+        }
+    };
 
+    if ($action === 'travel-preview') {
+        if (!$active) json_error('Only an open inquiry can be reviewed here.', 409);
+        json_response(DJ_InquiryReview::travel($b, $input, DJ_InquiryReview::settings($config)));
+    }
+
+    if (in_array($action, ['reopen', 'withdraw', 'revise-quote'], true)) {
+        if (!$preliminary && !($action === 'revise-quote' && $active) &&
+            !($action === 'reopen' && in_array($row['state'], ['Declined', 'Withdrawn'], true) && empty($row['event_id']))) {
+            json_error('This action requires an inquiry without a booking or contract.', 409);
+        }
+        $reason = is_string($input['reason'] ?? null) ? trim($input['reason']) : '';
+        if ($reason === '' || strlen($reason) > 1000) json_error('Enter a reason of up to 1,000 characters.', 422);
+        if ($action === 'revise-quote') {
+            $amount = filter_var($input['amount'] ?? null, FILTER_VALIDATE_FLOAT);
+            if ($amount === false || !is_finite($amount) || $amount < 0 || $amount > 1000000 || round($amount, 2) !== $amount) {
+                json_error('Enter a valid quote total with up to two decimal places.', 422);
+            }
+            $quote = $b['quote'] ?? synthesize_quote($b);
+            $previous = (float)($quote['total'] ?? 0);
+            $adjustment = round($amount - $previous, 2);
+            if ($adjustment != 0) $quote['items'][] = ['name' => 'Quote adjustment', 'quantity' => 1, 'unitPrice' => $adjustment, 'total' => $adjustment];
+            $quote['total'] = $amount;
+            $b['quote'] = $quote;
+            $reason = number_format($previous, 2) . ' → ' . number_format($amount, 2) . '. ' . $reason;
+        }
+        unset($b['informationRequest'], $b['travelReview'], $b['holdUntil']);
+        $labels = ['reopen' => 'Reopened', 'withdraw' => 'Preliminary approval withdrawn', 'revise-quote' => 'Quote revised'];
+        $saveInquiry(DJ_InquiryReview::audit($b, $labels[$action], $actor, $reason),
+            $action === 'withdraw' ? 'Withdrawn' : (DJ_InquiryReview::missing($b) ? 'Pending' : 'Ready for review'));
+        json_response(['message' => $labels[$action] . '.']);
+    }
+
+    if ($action === 'request-information' || $action === 'details') {
+        if (!$active) json_error('Only an open inquiry can be updated here.', 409);
+        if ($action === 'request-information') {
+            $token = bin2hex(random_bytes(32));
+            $b['informationRequest'] = ['tokenHash' => hash('sha256', $token), 'expiresAt' => time() + 7 * 86400];
+            $state = 'Awaiting information';
+            $b = DJ_InquiryReview::audit($b, 'Prepared information request', $actor);
+        } else {
+            $b = array_replace($b, DJ_InquiryReview::details(array_replace($b, $input)));
+            unset($b['informationRequest'], $b['travelReview']);
+            $state = DJ_InquiryReview::missing($b) ? 'Pending' : 'Ready for review';
+            $b = DJ_InquiryReview::audit($b, 'Admin updated details', $actor);
+        }
+        $saveInquiry($b, $state);
+        json_response(['token' => $token ?? null, 'message' => $action === 'request-information' ? 'Update link created.' : 'Inquiry details saved.']);
+    }
     if ($action === 'approve') {
-        if ($row['state'] !== 'Pending') json_error('This request has already been reviewed. Refresh the list.', 409);
-        $availability = request_availability($b, $id, DJ_Database::get_all_events(), DJ_Database::get_results("SELECT * FROM $reqs_table WHERE state = 'Pending'"));
+        if (!$active) json_error('This request has already been reviewed. Refresh the list.', 409);
+        $missing = DJ_InquiryReview::missing($b);
+        $travel = DJ_InquiryReview::travel($b, is_array($input['travel'] ?? null) ? $input['travel'] : [], DJ_InquiryReview::settings($config));
+        $missing = array_merge($missing, $travel['missing']);
+        $override = is_string($input['overrideReason'] ?? null) ? trim($input['overrideReason']) : '';
+        if ($missing && strlen($override) < 5) json_error('Required details are missing: ' . implode(', ', $missing) . '.', 422);
+        if (strlen($override) > 1000) json_error('Keep the override reason under 1,000 characters.', 422);
+        if ($travel['lodging'] === 'Decline') json_error('Use Decline request to record this lodging decision.', 422);
+        if (!empty($travel['warnings']) && empty($input['acknowledgeTravel'])) {
+            json_error(implode(' and ', $travel['warnings']) . '. Estimated total: ' . $travel['totalMinutes'] . ' minutes. Estimated arrival: ' . $travel['arrivalHome'] . '. Acknowledge the travel warnings to proceed.', 409);
+        }
+        $availability = request_availability($b, $id, DJ_Database::get_all_events(), DJ_Database::get_results("SELECT * FROM $reqs_table WHERE state IN ('Pending', 'Ready for review', 'Awaiting information', 'Preliminarily approved')"));
         if ($availability['level'] !== 'available' && empty($input['acknowledgeReview'])) {
             json_error('Availability review is required before approving this date. Refresh and review the conflicts.', 409);
         }
+        $holdHours = filter_var($input['holdHours'] ?? 0, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 168]]);
+        if ($holdHours === false) json_error('Enter a hold between 0 and 168 hours.', 422);
+        unset($b['informationRequest'], $b['holdUntil']);
+        if ($holdHours) $b['holdUntil'] = gmdate(DATE_ATOM, time() + $holdHours * 3600);
+        $b['travelReview'] = $travel;
+        $saveInquiry(DJ_InquiryReview::audit($b, 'Preliminary approval', $actor, $override), 'Preliminarily approved');
+        json_response(['message' => 'Preliminary approval saved. You can review it again before preparing a contract.']);
+    } elseif ($action === 'prepare-contract') {
+        if (!$preliminary) json_error('Preliminary approval is required.', 409);
+        if (!empty($b['holdUntil']) && strtotime($b['holdUntil']) <= time()) json_error('The hold has expired. Reopen and review the inquiry.', 409);
+        if (DJ_InquiryReview::missing($b)) json_error('Complete the venue and schedule before preparing a contract. Reopen the inquiry to edit details.', 422);
+        $availability = request_availability($b, $id, DJ_Database::get_all_events(), DJ_Database::get_results("SELECT * FROM $reqs_table WHERE state IN ('Pending', 'Ready for review', 'Awaiting information', 'Preliminarily approved')"));
+        if ($availability['level'] !== 'available' && empty($input['acknowledgeReview'])) json_error('Review the current availability warnings first.', 409);
         $eventInput = [
             'name' => ($b['name'] ?? 'Client') . ' • ' . ($b['type'] ?? 'Event'),
             'type' => $b['type'] ?? 'Wedding',
             'date' => $b['date'] ?? '',
             'status' => 'Tentative',
             'venue' => $b['venue'] ?? '',
+            'address' => $b['address'] ?? '',
+            'startTime' => $b['startTime'] ?? '',
+            'endTime' => $b['endTime'] ?? '',
             'client' => [
                 'name' => $b['name'] ?? '',
                 'email' => $b['email'] ?? '',
@@ -2175,11 +2290,25 @@ if (preg_match('#^admin/requests/([a-f0-9-]+)/(approve|decline|response)$#', $pa
             })(),
             'notes' => 'Website intake booking: ' . ($b['notes'] ?? '')
         ];
-        $saved = DJ_Database::save_event($eventInput);
-        DJ_Database::update($reqs_table, [
+        unset($b['holdUntil']);
+        $b = DJ_InquiryReview::audit($b, 'Opened tentative booking for contract preparation', $actor);
+        $pdo = DJ_Database::pdo();
+        $pdo->beginTransaction();
+        try {
+        if (!DJ_Database::update($reqs_table, [
+            'body' => json_encode($b, JSON_THROW_ON_ERROR),
             'state' => 'Approved',
-            'event_id' => $saved['id']
-        ], ['id' => $id]);
+            'version' => (int)$row['version'] + 1
+        ], ['id' => $id, 'version' => $row['version']])) {
+            $pdo->rollBack();
+            json_error('This inquiry changed. Refresh the list.', 409);
+        }
+        $saved = DJ_Database::save_event($eventInput);
+        if (empty($saved['id'])) {
+            $pdo->rollBack();
+            json_error($saved['error'] ?? 'Could not create the tentative event.', $saved['code'] ?? 422);
+        }
+        DJ_Database::update($reqs_table, ['event_id' => $saved['id']], ['id' => $id]);
 
         $workflows_table = DJ_Database::get_table_name('booking_workflows');
         DJ_Database::replace($workflows_table, [
@@ -2189,16 +2318,31 @@ if (preg_match('#^admin/requests/([a-f0-9-]+)/(approve|decline|response)$#', $pa
         ]);
 
         $token = DJ_Auth::create_invitation($saved['id'], $saved['client']['email'], 'planner', $saved['client']['name']);
+        $pdo->commit();
+        } catch (Throwable $error) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $error;
+        }
         json_response([
             'eventId' => $saved['id'],
             'token' => $token,
-            'message' => 'Date approved.'
+            'message' => 'Tentative booking created for contract preparation.'
         ]);
-    } elseif ($action === 'decline') {
-        DJ_Database::update($reqs_table, ['state' => 'Declined'], ['id' => $id]);
-        json_response(['ok' => true, 'message' => 'Request declined.']);
-    } elseif ($action === 'response') {
-        json_response(['ok' => true]);
+    } elseif ($action === 'decline' || $action === 'response') {
+        if (($action === 'decline' && !$active) || ($action === 'response' && $row['state'] !== 'Declined')) {
+            json_error('This inquiry is no longer eligible for this action.', 409);
+        }
+        $reason = ($input['reason'] ?? '') === 'travel' ? 'travel' : 'unavailable';
+        $subject = is_string($input['subject'] ?? null) ? trim($input['subject']) : '';
+        $responseBody = is_string($input['body'] ?? null) ? trim($input['body']) : '';
+        if ($subject === '' || strlen($subject) > 300 || preg_match('/[\r\n]/', $subject) || $responseBody === '' || strlen($responseBody) > 8000) {
+            json_error('Enter a single-line subject and a response of up to 8,000 characters.', 422);
+        }
+        unset($b['informationRequest']);
+        $b['declineResponse'] = ['reason' => $reason, 'to' => $b['email'] ?? $b['clientEmail'] ?? '', 'subject' => $subject,
+            'body' => $responseBody, 'offerPartner' => !empty($input['offerPartner']), 'offerAlternateDate' => !empty($input['offerAlternateDate'])];
+        $saveInquiry(DJ_InquiryReview::audit($b, $action === 'decline' ? 'Declined' : 'Decline response edited', $actor, $reason), 'Declined');
+        json_response(['ok' => true, 'message' => $action === 'decline' ? 'Inquiry declined. Response draft saved.' : 'Response draft saved.']);
     }
 }
 
