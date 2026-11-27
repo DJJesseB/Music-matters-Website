@@ -85,10 +85,11 @@ function dj_event_payment_route(string $path, string $method, array $input): voi
             if (!$fresh) throw new RuntimeException('Event not found.');
             $amount = round((float)$amountValue, 2);
             $pending = (float)DJ_Database::get_var("SELECT COALESCE(SUM(amount),0) FROM $table WHERE event_id = ? AND method = 'Check' AND status = 'Received'", [$eventId]);
+            $pendingRetainer = (float)DJ_Database::get_var("SELECT COALESCE(SUM(amount),0) FROM $table WHERE event_id = ? AND method = 'Check' AND status = 'Received' AND applies_to = 'retainer'", [$eventId]);
             if ($amount > (float)($fresh['amount'] ?? 0) - (float)($fresh['paid'] ?? 0) - $pending + 0.009) {
                 throw new RuntimeException('Payment exceeds the remaining balance after pending checks.');
             }
-            if ($appliesTo === 'retainer' && $amount > (float)($fresh['depositRequired'] ?? 0) - (float)($fresh['depositReceived'] ?? 0) + 0.009) {
+            if ($appliesTo === 'retainer' && $amount > (float)($fresh['depositRequired'] ?? 0) - (float)($fresh['depositReceived'] ?? 0) - $pendingRetainer + 0.009) {
                 throw new RuntimeException('Payment exceeds the unpaid retainer amount.');
             }
             $status = $paymentMethod === 'Check' ? 'Received' : 'Cleared';
@@ -97,7 +98,7 @@ function dj_event_payment_route(string $path, string $method, array $input): voi
             DJ_Database::insert($table, [
                 'id'=>$id, 'event_id'=>$eventId, 'method'=>$paymentMethod, 'amount'=>$amount,
                 'received_on'=>$received, 'applies_to'=>$appliesTo, 'reference'=>$reference,
-                'status'=>$status, 'cleared_on'=>$status === 'Cleared' ? gmdate('Y-m-d') : null,
+                'status'=>$status, 'cleared_on'=>$status === 'Cleared' ? $received : null,
                 'recorded_by'=>$actor, 'recorded_at'=>DJ_Database::now()
             ]);
             $pdo->commit();
