@@ -68,6 +68,19 @@ final class DJ_RequestKiosk {
         return DJ_Database::get_row("SELECT * FROM $table WHERE token_hash = ?", [$hash]);
     }
 
+    public static function blocksSignIn(): bool {
+        $session = self::session();
+        if ($session && (int)$session['expires_at'] > time()
+            && in_array($session['state'], ['active', 'paused'], true)) {
+            $event = DJ_Database::get_event($session['event_id']);
+            $table = DJ_Database::get_table_name('music_request_settings');
+            $settings = DJ_Database::get_row("SELECT enabled FROM $table WHERE event_id = ?", [$session['event_id']]);
+            if (self::canPair($event, $settings)) return true;
+        }
+        self::cookie('', time() - 3600);
+        return false;
+    }
+
     public static function usable(?array $session): bool {
         return $session && (int)$session['expires_at'] > time() && $session['state'] === 'active';
     }

@@ -819,7 +819,7 @@ if ($path === 'auth/login' && $method === 'POST') {
     require_db();
     if (DJ_RequestKiosk::credential($_COOKIE[DJ_RequestKiosk::COOKIE] ?? '')) {
         DJ_RequestKiosk::install();
-        if (DJ_RequestKiosk::session()) json_error('End the request kiosk before signing in on this device.', 403);
+        if (DJ_RequestKiosk::blocksSignIn()) json_error('End the request kiosk before signing in on this device.', 403);
     }
     $email = $input['email'] ?? '';
     $password = $input['password'] ?? '';

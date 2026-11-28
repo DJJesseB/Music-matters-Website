@@ -57,6 +57,7 @@ jobs:
           php -l public_html/dj-desk/api/Database.php
           php -l public_html/dj-desk/api/RequestLifecycle.php
           php tests/staging-client-booking.php
+          php tests/staging-kiosk-sign-in.php
       - name: Check deployment configuration
         env:
           FTP_HOST: ${{ secrets.SITE_FTPS_HOST }}
