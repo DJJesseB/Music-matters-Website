@@ -360,3 +360,11 @@ img[data-addon-photo]{cursor:zoom-in}img[data-addon-photo]:focus-visible{outline
  .booking-progress li {grid-template-columns:1fr;gap:4px;padding:8px;font-size:.86rem}
  .booking-progress li > span {grid-row:auto}
 }
+
+.school-invoice-dialog {width:min(620px,calc(100% - 30px));max-height:calc(100% - 32px);margin:auto;overflow:auto;color:var(--text);background:var(--panel);border:1px solid #556048}
+.school-invoice-dialog::backdrop {background:rgba(0,0,0,.72)}
+.school-invoice-options {display:grid;gap:10px;margin:16px 0}
+.school-invoice-options button {text-align:left;white-space:normal}
+.school-invoice-options small {display:block;line-height:1.4;margin-top:4px;color:inherit}
+.school-invoice-ready {padding:14px 0}
+.school-invoice-dialog form {margin-top:14px}

@@ -7,9 +7,9 @@ import {mountPackageSummary} from './package-ui.js?v=205';
 import {timeField,bindTimeFields,readTime} from './time-input.js?v=180';
 import {mountWedding} from './wedding-ui.js?v=192';
 import {bindPlaybookButton} from './playbook.js?v=1';
-import {mountContracts} from './contracts-ui.js?v=228';
+import {mountContracts} from './contracts-ui.js?v=229';
 import {stripePaymentUrl} from './stripe-ui.js?v=182';
-import {mountSchoolInvoices} from './school-invoice-ui.js?v=233';
+import {mountSchoolInvoices,showSchoolInvoice} from './school-invoice-ui.js?v=234';
 
 export function momentTitle(item) {
  const title = [item.detail, item.activity].find(value => typeof value === 'string' && value.trim());
@@ -71,8 +71,8 @@ export function portalUI({api,app,head,esc,field,area,money,date,message,onLogin
  document.querySelector('#signin').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('button');b.disabled=true;try{const result=await api('auth/'+(invite?'accept':'login'),'POST',invite?{token:invite,password:f.elements.password.value}:{email:f.elements.email.value,password:f.elements.password.value});await onLogin(result);}catch(err){document.querySelector('#loginError').textContent=err.message;message(err.message,true,err.field);b.disabled=false;}};
  }
  async function home(){const events=await api('portal/events');app.innerHTML=head('WELCOME TO YOUR BACKSTAGE PASS','Your celebration starts here.','A little planning. A lot of great memories.','<a class="button secondary" href="../" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-weight:700;color:#b6ff35;padding:10px 16px;border:1px solid #64734e;border-radius:8px;">← Return to Main Website</a>')+`<div class="columns">${events.map(e=>`<section class="card"><span class="badge purple">${esc(e.type)}</span><h2>${esc(e.name)}</h2><p>${date(e.date)} · ${esc(e.venue||'Venue to be decided')}</p><p>${esc(e.status)} · Contract ${esc(e.contractStatus.toLowerCase())}</p><a class="button" href="#portal/${e.id}">${e.bookingStep?.stage==='retainer'?'Pay retainer →':e.bookingStep?.stage==='contract'?'Review contract →':'Plan your event →'}</a></section>`).join('')||'<section class="card"><h2>No events shared yet</h2><p>Ask DJ Jesse B to grant your account access.</p></section>'}</div>`;}
- function bookingProgress(stage) {
-  const steps=[['contract','Sign contract'],['retainer','Pay retainer'],['planning','Plan your event']];
+ function bookingProgress(stage, school=false) {
+  const steps=[['contract','Sign contract'],['retainer',school?'Get school invoice':'Pay retainer'],['planning','Plan your event']];
   const current=steps.findIndex(([key])=>key===stage);
   return `<ol class="booking-progress" aria-label="Booking steps">${steps.map(([key,label],index)=>
    `<li${key===stage?' aria-current="step"':''}><span aria-hidden="true">${index<current?'✓':index+1}</span><strong>${label}</strong><small>${index<current?'Complete':index===current?'Current step':'Upcoming'}</small></li>`).join('')}</ol>`;
@@ -86,13 +86,13 @@ export function portalUI({api,app,head,esc,field,area,money,date,message,onLogin
   app.innerHTML=`<div class="client-plan-header"><div class="client-plan-nav"><a href="#portal">← My events</a></div>
    <p>${esc(event.name)}${event.date?' · '+date(event.date):''}</p>
    <h1 tabindex="-1" data-booking-step-heading>${title}</h1></div>
-   ${contractOnly?'':bookingProgress(step.stage)}
+   ${contractOnly?'':bookingProgress(step.stage,event.type==='School dance')}
    ${retainer?`<section class="card booking-retainer"><p>${signedNow?'Your contract is signed. ':''}Your planner opens as soon as your retainer is confirmed.</p>
     <h2>Retainer remaining <strong data-retainer-amount>${money(step.retainerRemaining)}</strong></h2>
     <div data-retainer-invoice aria-live="polite"></div>
     <details><summary>Pay by check, money order, or cash</summary><p>Contact DJ Jesse B to arrange delivery or in-person payment. Your planner opens once Jesse confirms receipt.</p></details>
     <div class="actions"><button type="button" class="secondary" data-retainer-refresh>Check payment status</button><small data-retainer-status role="status"></small></div>
-   </section>`:`<p>${contractOnly?(step.signed?'You can download the signed contract below.':'The primary contact manages the retainer and planner.'):'Review the agreement below. After it’s signed, you’ll continue to your next booking step.'}</p>`}
+   </section>`:`<p>${contractOnly?(step.signed?'You can download the signed contract below.':'The primary contact manages the retainer and planner.'):event.type==='School dance'?'Review the agreement below. After signing, you can prepare an invoice for your school business office and start planning.':'Review the agreement below. After it’s signed, you’ll continue to your next booking step.'}</p>`}
    <div data-portal-anchor hidden></div>`;
   const heading=app.querySelector('[data-booking-step-heading]');
   heading.focus();
@@ -150,6 +150,7 @@ export function portalUI({api,app,head,esc,field,area,money,date,message,onLogin
    onSigned:async()=>{ if(heading.isConnected)await plan(event.id,false,null,true,true); }});
  }
 
+ const shownInvoices=new Set();
  async function plan(id,admin=false,shared=null,signedNow=false,focus=false) {
   if(!admin){
    shared=shared||(await api('portal/events')).find(event=>event.id===id);
@@ -158,6 +159,18 @@ export function portalUI({api,app,head,esc,field,area,money,date,message,onLogin
    if(shared.bookingStep.stage!=='planning'){
     await bookingStep(shared,signedNow);
     return;
+   }
+   const schoolContract=shared.bookingStep.schoolInvoiceContractId;
+   const key='djdesk-school-invoice:'+id+':'+schoolContract;
+   let acknowledged=shownInvoices.has(key);
+   try{acknowledged ||= sessionStorage.getItem(key)==='seen';}catch{}
+   if(schoolContract&&!acknowledged){
+    app.innerHTML=head('SCHOOL DANCE',esc(shared.name),'Your contract has been signed.');
+    await showSchoolInvoice({api,event:shared,esc,money,app});
+    shownInvoices.add(key);
+    try{sessionStorage.setItem(key,'seen');}catch{}
+    if(location.hash!=='#portal/'+id)return;
+    focus=true;
    }
   }
 const prefix=(admin?'admin':'portal')+'/events/'+id;const {event:e,fields,musicRequests,plan}=await api(prefix+'/plan');let p=plan;const answers=p.answers||{};
@@ -168,7 +181,8 @@ const prefix=(admin?'admin':'portal')+'/events/'+id;const {event:e,fields,musicR
   <p>${e.date?date(e.date):'Date to be decided'} · ${esc(e.venue||'Venue to be decided')}</p>
   <p class="client-plan-status">Booking · <strong>${esc(e.status)}</strong> <span>Contract · <strong data-contract-status>${esc(e.contractStatus)}</strong></span></p>
  </div>
- ${!admin&&shared.bookingStep.managed?bookingProgress('planning'):''}
+ ${!admin&&shared.bookingStep.managed?bookingProgress('planning',e.type==='School dance'):''}
+ ${!admin&&shared.bookingStep.schoolInvoiceContractId?'<p><button type="button" class="button secondary" data-open-school-invoice>School business office invoice</button></p>':''}
  <div class="client-plan-intro">
   <h2>${esc(e.type)} planner</h2>
   <p id="planHint">${p.submitted?'Submitted for DJ review. Saving a new draft reopens your planner.':'Save a draft anytime. Submit when your plans are ready for DJ review.'}</p>
@@ -190,6 +204,8 @@ const prefix=(admin?'admin':'portal')+'/events/'+id;const {event:e,fields,musicR
     <p class="deposit-policy">${esc(depositPolicy)}</p>
    </details>
    <div data-portal-anchor hidden></div>${admin?`<section class="card"><h2>Client access</h2><p>Grant access to an existing client or create a one-use invitation for a new client. Links expire after 24 hours.</p><div id="members"></div><form id="access"><label>Client email<input type="email" name="email" required></label><button type="submit">Create invitation / grant access</button></form><div id="invitation" role="status"></div></section>`:''}</div></details>`;
+ const schoolInvoice=app.querySelector('[data-open-school-invoice]');
+ if(schoolInvoice)schoolInvoice.onclick=()=>showSchoolInvoice({api,event:e,esc,money,app});
  if(focus)app.querySelector('[data-planner-heading]').focus();
  if(signedNow)message('Contract signed. Your planner is ready.');
  const tools=app.querySelector('.client-plan-tools');

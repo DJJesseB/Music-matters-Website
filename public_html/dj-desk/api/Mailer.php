@@ -278,13 +278,23 @@ class DJ_Mailer {
     /**
      * Send client invitation link for planning & contract portal
      */
-    public static function sendClientInvitation(string $toEmail, string $clientName, string $eventName, string $eventDate, string $token, string $scope = 'both', ?string $baseUrl = null): array {
-        $brandName = self::getFromName();
-        $portalUrl = ($baseUrl ?: 'https://music-matters.me/dj-desk/') . '?token=' . urlencode($token);
+    public static function portalBase(): string {
+        $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+        return $host === 'staging.music-matters.me'
+            ? 'https://staging.music-matters.me/dj-desk/'
+            : 'https://music-matters.me/dj-desk/';
+    }
 
-        $scopeDesc = ($scope === 'contract')
-            ? 'review and sign your event agreement'
-            : 'access your event planning timeline, music request list, and agreement';
+    public static function sendClientInvitation(string $toEmail, string $clientName, string $eventName, string $eventDate, string $token, string $scope = 'both', ?string $portalUrl = null): array {
+        $brandName = self::getFromName();
+        $portalUrl = $portalUrl ?: self::portalBase() . '#invite/' . rawurlencode($token);
+        $accessLabel = $token ? 'Private invitation (valid for 24 hours)' : 'Use your existing client account';
+
+        $scopeDesc = match ($scope) {
+            'school' => 'sign your event agreement, prepare an invoice for the school business office, and start planning',
+            'contract' => 'review and sign your event agreement',
+            default => 'access your event planning timeline, music request list, and agreement',
+        };
 
         $body = "
             <h2 style=\"margin:0 0 16px;color:#ffffff;font-size:22px;\">Welcome, " . htmlspecialchars($clientName) . "! 🎧</h2>
@@ -303,12 +313,12 @@ class DJ_Mailer {
                     </tr>
                     <tr>
                         <td style=\"padding:6px 0;\"><strong style=\"color:#b6ff35;\">Access Link:</strong></td>
-                        <td style=\"padding:6px 0;color:#94a3b8;\">One-click secure link (valid for 24 hours)</td>
+                        <td style=\"padding:6px 0;color:#94a3b8;\">" . htmlspecialchars($accessLabel) . "</td>
                     </tr>
                 </table>
             </div>
             <p style=\"font-size:14px;line-height:1.5;color:#cbd5e1;margin-bottom:24px;\">
-                Click the button below to enter your private event planner:
+                Click below to open your private client portal:
             </p>
         ";
 

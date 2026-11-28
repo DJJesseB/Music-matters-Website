@@ -2,17 +2,7 @@
 /** Admin school invoices, immutable invoice snapshots, and check-payment tracking. */
 declare(strict_types=1);
 
-function dj_school_invoice_route(string $path, string $method, array $input): void {
-    if (!preg_match('#^admin/events/([a-f0-9-]+)/invoices(?:/([a-f0-9-]+)(?:/checks(?:/([a-f0-9-]+))?)?)?$#', $path, $m)) return;
-    require_db();
-    $session = require_admin();
-    if ($method !== 'GET') {
-        if (empty($session['csrf']) || !hash_equals((string)$session['csrf'], (string)($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) json_error('Session validation failed. Refresh and try again.', 403);
-    }
-    $eventId = $m[1];$invoiceId = $m[2] ?? null;$checkId = $m[3] ?? null;
-    $event = DJ_Database::get_event($eventId);
-    if (!$event) json_error('Event not found', 404);
-    if (($event['type'] ?? '') !== 'School dance') json_error('School invoicing is available for school dance bookings.', 422);
+function dj_school_invoice_tables(): array {
     $table = DJ_Database::get_table_name('school_invoices');
     $checks = DJ_Database::get_table_name('school_invoice_checks');
     $audit = DJ_Database::get_table_name('school_invoice_audit');
@@ -38,6 +28,131 @@ function dj_school_invoice_route(string $path, string $method, array $input): vo
       actor_id varchar(64) NOT NULL, details varchar(255) NOT NULL DEFAULT '',
       created_at datetime NOT NULL
     )");
+    return [$table, $checks, $audit];
+}
+
+function dj_school_portal_invoice_route(string $path, string $method, array $input): void {
+    if (!preg_match('#^portal/events/([a-f0-9-]+)/school-invoice$#', $path, $matches)) return;
+    require_db();
+    $session = require_auth();
+    $eventId = $matches[1];
+    $event = DJ_Database::get_event($eventId);
+    if (!$event || ($event['type'] ?? '') !== 'School dance') json_error('School booking not found.', 404);
+    if (DJ_ClientBooking::access($session['user'], $event) !== 'planner') json_error('School billing access required.', 403);
+    [$table, , $audit] = dj_school_invoice_tables();
+    $pdo = DJ_Database::pdo();
+    $contracts = DJ_Database::get_table_name('contracts');
+    $findInvoice = static function () use ($table, $eventId): ?array {
+        $invoice = DJ_Database::get_row(
+            "SELECT number, snapshot FROM $table WHERE event_id = ? AND status = 'Issued' ORDER BY revision DESC LIMIT 1",
+            [$eventId]
+        );
+        if ($invoice) $invoice['snapshot'] = json_decode($invoice['snapshot'], true, 512, JSON_THROW_ON_ERROR);
+        return $invoice;
+    };
+    $findContract = static fn() => DJ_Database::get_row(
+        "SELECT id, status, snapshot FROM $contracts WHERE event_id = ? ORDER BY revision DESC LIMIT 1",
+        [$eventId]
+    );
+    if ($method === 'GET') {
+        $contract = $findContract();
+        if (($contract['status'] ?? '') !== 'Signed') json_error('Sign the contract before preparing a school invoice.', 403);
+        json_response(['invoice' => $findInvoice()] + dj_school_portal_invoice_amounts($event, json_decode($contract['snapshot'], true)));
+    }
+    if ($method !== 'POST') json_error('Unsupported school invoice request.', 405);
+    if (empty($session['csrf']) || !hash_equals($session['csrf'], (string)($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) {
+        json_error('Session validation failed. Refresh and try again.', 403);
+    }
+    $choice = $input['choice'] ?? null;
+    if (!in_array($choice, ['retainer', 'full'], true)) json_error('Choose retainer only or pay in full.', 422);
+
+    $pdo->beginTransaction();
+    try {
+        $events = DJ_Database::get_table_name('events');
+        DJ_Database::query("SELECT id FROM $events WHERE id = ? FOR UPDATE", [$eventId]);
+        $event = DJ_Database::get_event($eventId);
+        $contract = $findContract();
+        if (!$event || ($contract['status'] ?? '') !== 'Signed') {
+            $pdo->rollBack();
+            json_error('Sign the latest contract before preparing a school invoice.', 409);
+        }
+        $invoice = $findInvoice();
+        if (!$invoice) {
+            $agreement = json_decode($contract['snapshot'], true, 512, JSON_THROW_ON_ERROR);
+            $amounts = dj_school_portal_invoice_amounts($event, $agreement);
+            $amountDue = $amounts[$choice];
+            if ($amountDue <= 0) {
+                $pdo->rollBack();
+                json_error('There is no amount due for this option.', 409);
+            }
+            $revision = 1 + (int)DJ_Database::get_var("SELECT MAX(revision) FROM $table WHERE event_id = ?", [$eventId]);
+            $number = 'DJB-' . gmdate('Y') . '-' . strtoupper(substr(str_replace('-', '', $eventId), 0, 8)) . '-' . str_pad((string)$revision, 2, '0', STR_PAD_LEFT);
+            $invoiceId = DJ_Database::uuid();
+            $actor = $session['user']['id'];
+            $terms = $agreement['financials'];
+            $details = $agreement['event'];
+            $today = gmdate('Y-m-d');
+            $due = $choice === 'retainer' ? ($terms['depositDue'] ?? '') : ($terms['balanceDue'] ?? '');
+            $remainder = round($amounts['full'] - $amountDue, 2);
+            $signatures = DJ_Database::get_table_name('signatures');
+            $signature = json_decode((string)DJ_Database::get_var("SELECT body FROM $signatures WHERE contract_id = ?", [$contract['id']]), true);
+            $organization = trim((string)($event['client']['organization'] ?? '')) ?: ($signature['organization'] ?? '');
+            $snapshot = [
+                'school' => $organization ?: $details['name'],
+                'billTo' => 'Accounts Payable',
+                'eventName' => $details['name'], 'eventDate' => $details['date'], 'eventVenue' => $details['venue'] ?? '',
+                'issuedOn' => $today, 'dueDate' => $due ?: $today, 'terms' => $due ? 'custom' : 'due',
+                'payee' => 'JESSE BARTO', 'mailingAddress' => "P.O. Box 386\nMillbrook, NY 12545",
+                'lineItems' => [[
+                    'name' => $choice === 'retainer' ? 'School dance retainer' : 'School dance DJ & MC services — outstanding balance',
+                    'quantity' => 1, 'total' => $amountDue,
+                ]],
+                'subtotal' => $terms['subtotal'] ?? $terms['amount'], 'discount' => $terms['discount'] ?? 0,
+                'contractTotal' => $terms['amount'], 'alreadyPaid' => $event['paid'] ?? 0,
+                'amountDue' => $amountDue, 'billingChoice' => $choice, 'billLater' => $remainder,
+                'notes' => $remainder > 0 ? 'Remaining balance to be billed separately: $' . number_format($remainder, 2) . '.' : '',
+            ];
+            DJ_Database::insert($table, [
+                'id' => $invoiceId, 'event_id' => $eventId, 'number' => $number, 'revision' => $revision,
+                'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR), 'status' => 'Issued', 'created_by' => $actor, 'issued_at' => DJ_Database::now(),
+            ]);
+            DJ_Database::insert($audit, [
+                'id' => DJ_Database::uuid(), 'invoice_id' => $invoiceId, 'event_id' => $eventId,
+                'action' => 'issued', 'actor_id' => $actor, 'details' => 'Business office invoice selected in the client portal',
+                'created_at' => DJ_Database::now(),
+            ]);
+            $invoice = ['number' => $number, 'snapshot' => $snapshot];
+        }
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        json_error('The school invoice could not be prepared. Refresh to check for an existing invoice.', 409);
+    }
+    json_response(['invoice' => $invoice]);
+}
+
+function dj_school_portal_invoice_amounts(array $event, array $agreement): array {
+    $terms = $agreement['financials'];
+    $paid = max(0, (int)round((float)($event['paid'] ?? 0) * 100));
+    $received = max(0, (int)round((float)($event['depositReceived'] ?? 0) * 100));
+    $full = max(0, (int)round((float)$terms['amount'] * 100) - $paid);
+    $retainer = max(0, (int)round((float)$terms['depositRequired'] * 100) - $received);
+    return ['retainer' => min($retainer, $full) / 100, 'full' => $full / 100];
+}
+
+function dj_school_invoice_route(string $path, string $method, array $input): void {
+    if (!preg_match('#^admin/events/([a-f0-9-]+)/invoices(?:/([a-f0-9-]+)(?:/checks(?:/([a-f0-9-]+))?)?)?$#', $path, $m)) return;
+    require_db();
+    $session = require_admin();
+    if ($method !== 'GET') {
+        if (empty($session['csrf']) || !hash_equals((string)$session['csrf'], (string)($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) json_error('Session validation failed. Refresh and try again.', 403);
+    }
+    $eventId = $m[1];$invoiceId = $m[2] ?? null;$checkId = $m[3] ?? null;
+    $event = DJ_Database::get_event($eventId);
+    if (!$event) json_error('Event not found', 404);
+    if (($event['type'] ?? '') !== 'School dance') json_error('School invoicing is available for school dance bookings.', 422);
+    [$table, $checks, $audit] = dj_school_invoice_tables();
+    $pdo = DJ_Database::pdo();
     $actor = (string)($session['user']['id'] ?? '');
     $log = static function($invoice,$action,$details='') use ($audit,$eventId,$actor){
         DJ_Database::insert($audit,['id'=>DJ_Database::uuid(),'invoice_id'=>$invoice,'event_id'=>$eventId,

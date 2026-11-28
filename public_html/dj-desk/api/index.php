@@ -1101,6 +1101,7 @@ dj_event_payment_route($path,$method,$input);
 
 // School business-office invoices and check payment lifecycle.
 require_once __DIR__ . '/SchoolInvoices.php';
+dj_school_portal_invoice_route($path, $method, $input);
 dj_school_invoice_route($path,$method,$input);
 
 // -------------------------------------------------------------
@@ -1167,6 +1168,7 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
         $terms = trim((string)($input['terms'] ?? ''));
         $signerEmail = strtolower(trim((string)($input['email'] ?? ($event['client']['email'] ?? ''))));
         $signerName = trim((string)($input['signerName'] ?? ($event['client']['name'] ?? '')));
+        if (!filter_var($signerEmail, FILTER_VALIDATE_EMAIL)) json_error('Choose a signer with a valid email address.', 422);
         $deliveryMethod = (string)($input['deliveryMethod'] ?? 'electronic');
         if (!in_array($deliveryMethod, ['electronic','paper'], true)) json_error('Choose an available signing method.', 422);
 
@@ -1204,6 +1206,13 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
             'disclosure' => $disclosure
         ];
 
+        $school = ($event['type'] ?? '') === 'School dance';
+        $users = DJ_Database::get_table_name('users');
+        $schoolSigner = $school && $deliveryMethod === 'electronic'
+            ? DJ_Database::get_row("SELECT id,role FROM $users WHERE email = ?", [$signerEmail])
+            : null;
+        if ($schoolSigner && $schoolSigner['role'] !== 'client') json_error('Choose a client account as the school signer.', 422);
+
         $content = json_encode($snapshot);
         $contractId = DJ_Database::uuid();
         $contractHash = hash('sha256', $content);
@@ -1222,29 +1231,35 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
             'created_at' => DJ_Database::now()
         ]);
 
-        // Automatically prepare invitations for signer only when requested.
         $deliveries = [];
         $emailSent = false;
         if ($deliveryMethod === 'electronic') {
-        $token = DJ_Auth::create_invitation($id, $signerEmail, 'contract', $signerName);
-        $deliveries[] = [
-            'email' => $signerEmail,
-            'name' => $signerName,
-            'token' => $token,
-            'signer' => true,
-            'scope' => ($signerEmail === strtolower($event['client']['email'])) ? 'both' : 'contract'
-        ];
-
-        // Automatically dispatch invitation email to signer if mailer is active
-        $emailSent = false;
-        if (DJ_Mailer::isConfigured()) {
-            $evName = $event['name'] ?? 'Your Upcoming Event';
-            $evDate = !empty($event['date']) ? date('F j, Y', strtotime($event['date'])) : 'TBD';
-            $mailRes = DJ_Mailer::sendClientInvitation($signerEmail, $signerName ?: 'Valued Client', $evName, $evDate, $token, 'contract');
-            $emailSent = !empty($mailRes['ok']);
+            $scope = $school ? 'planner' : 'contract';
+            $portalBase = DJ_Mailer::portalBase();
+            $token = '';
+            if ($schoolSigner) {
+                DJ_Database::replace(DJ_Database::get_table_name('memberships'), ['user_id' => $schoolSigner['id'], 'event_id' => $id]);
+            } else {
+                $token = DJ_Auth::create_invitation($id, $signerEmail, $scope, $signerName);
+            }
+            $portalUrl = $portalBase . ($token ? '#invite/' . rawurlencode($token) : '#portal/' . rawurlencode($id));
+            $deliveries[] = [
+                'email' => $signerEmail,
+                'name' => $signerName,
+                'token' => $token,
+                'url' => $portalUrl,
+                'signer' => true,
+                'scope' => ($school || $signerEmail === strtolower($event['client']['email'])) ? 'both' : 'contract'
+            ];
+            if (DJ_Mailer::isConfigured()) {
+                $evDate = !empty($event['date']) ? date('F j, Y', strtotime($event['date'])) : 'TBD';
+                $mailRes = DJ_Mailer::sendClientInvitation(
+                    $signerEmail, $signerName ?: 'Valued Client', $event['name'] ?? 'Your Upcoming Event',
+                    $evDate, $token, $school ? 'school' : 'contract', $portalUrl
+                );
+                $emailSent = !empty($mailRes['ok']);
+            }
         }
-
-        } // Paper delivery creates no electronic invitation or email.
 
         json_response([
             'id'         => $contractId,
@@ -1295,6 +1310,15 @@ if ($method === 'POST' && preg_match('#^portal/events/([a-f0-9-]+)/contracts/([a
         'signedAt' => DJ_Database::now(),
         'contractHash' => $c['hash']
     ];
+
+    if (($c['snapshot']['event']['type'] ?? '') === 'School dance') {
+        $signature['title'] = is_string($input['title']) ? trim($input['title']) : '';
+        $signature['organization'] = is_string($input['organization']) ? trim($input['organization']) : '';
+        if ($signature['title'] === '' || $signature['organization'] === ''
+            || strlen($signature['title']) > 800 || strlen($signature['organization']) > 1200) {
+            json_error('Enter a valid title and school organization.', 422);
+        }
+    }
 
     $pdo = DJ_Database::pdo();
     $pdo->beginTransaction();
