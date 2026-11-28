@@ -11,8 +11,8 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; manifest-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
     <title>Request Kiosk · DJ Jesse B</title>
     <link rel="manifest" href="./kiosk.webmanifest">
-    <link rel="stylesheet" href="./kiosk.css?v=2">
-    <script type="module" src="./kiosk.js?v=4"></script>
+    <link rel="stylesheet" href="./kiosk.css?v=3">
+    <script type="module" src="./kiosk.js?v=5"></script>
 </head>
 <body>
     <header><span>DJ JESSE B</span><button type="button" id="exit" hidden>Admin exit</button></header>
@@ -25,9 +25,13 @@
             <button type="submit">Pair kiosk</button>
         </form>
         <form id="request" hidden autocomplete="off">
+            <label class="kiosk-suggestion-picker">Suggested songs
+                <select id="kiosk-suggestions">
+                    <option value="">Choose from 50 songs</option>
+                </select>
+            </label>
             <label>Song title<input name="title" required maxlength="160" enterkeyhint="next"></label>
             <label>Artist<input name="artist" required maxlength="160" enterkeyhint="send"></label>
-            <div id="kiosk-suggestions" role="group" aria-label="Suggested songs" hidden></div>
             <button type="submit">Send request</button>
             <p>Requests are subject to DJ approval. <span id="school" hidden>Clean edits only.</span></p>
         </form>

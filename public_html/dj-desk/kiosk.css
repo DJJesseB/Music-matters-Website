@@ -39,7 +39,9 @@ a { color: #dbc3ff; }
 dialog { width: min(28rem, calc(100% - 2rem)); background: #211833; color: #fff; border: 1px solid #a390bc; border-radius: 1rem; padding: 1.5rem; }
 dialog::backdrop { background: #0d0818c9; }
 
-#kiosk-suggestions { display: flex; flex-wrap: wrap; gap: .5rem; }
-#kiosk-suggestions[hidden] { display: none; }
-#kiosk-suggestions button { min-height: 44px; background: #282035; color: #fff; }
-#kiosk-suggestions h2 { flex-basis:100%; margin:0; font-size:1rem; }
+.kiosk-suggestion-picker { justify-self: end; width: min(68%, 22rem); min-width: min(100%, 10rem); }
+.kiosk-suggestion-picker select {
+    width: 100%; min-height: 56px; border: 1px solid #a390bc;
+    border-radius: .75rem; padding: .7rem .85rem; font: inherit;
+    background: #282035; color: #fff;
+}
