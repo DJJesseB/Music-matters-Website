@@ -11,7 +11,7 @@ const exitForm = find('#exit-form');
 const exitError = find('#exit-error');
 const rePair = find('#re-pair');
 const pairingCode = new URLSearchParams(location.hash.slice(1)).get('pair');
-if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+let launchPending = Boolean(pairingCode && /^[0-9]{6}$/.test(pairingCode));
 
 let state = null;
 let online = false;
@@ -25,17 +25,23 @@ let previousSubmission;
 async function api(path, data) {
     const headers = {'X-DJ-Kiosk': '1'};
     if (data) headers['Content-Type'] = 'application/json';
-    const response = await fetch('./api/index.php?route=kiosk/' + path, {
-        method: data ? 'POST' : 'GET',
-        headers,
-        credentials: 'same-origin',
-        cache: 'no-store',
-        body: data ? JSON.stringify(data) : undefined,
-        signal: AbortSignal.timeout(10000)
-    });
-    const result = await response.json();
-    if (!response.ok) throw Object.assign(new Error(result.error || 'Please try again.'), {status: response.status});
-    return result;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+        const response = await fetch('./api/index.php?route=kiosk/' + path, {
+            method: data ? 'POST' : 'GET',
+            headers,
+            credentials: 'same-origin',
+            cache: 'no-store',
+            body: data ? JSON.stringify(data) : undefined,
+            signal: controller.signal
+        });
+        const result = await response.json();
+        if (!response.ok) throw Object.assign(new Error(result.error || 'Please try again.'), {status: response.status});
+        return result;
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 function render() {
@@ -82,11 +88,25 @@ async function refresh() {
             notice.textContent = '';
         }
         find('#school').hidden = !result.school;
-    } catch {
-        if (!working) online = false;
+    } catch (error) {
+        if (!working) {
+            online = false;
+            if (state === null) notice.textContent = error.status ? error.message : 'Could not connect to the kiosk. Check your connection and keep this page open to retry.';
+        }
     } finally {
         checking = false;
         render();
+    }
+    if (online && launchPending) {
+        launchPending = false;
+        if (['unpaired', 'closed', 'revoked'].includes(state)) {
+            pairingAgain = state !== 'unpaired';
+            pair.elements.code.value = pairingCode;
+            void pairWithCode(pairingCode);
+        } else {
+            clearLaunchCode();
+            notice.textContent = 'This device is already paired. Exit the current kiosk before pairing again.';
+        }
     }
 }
 
@@ -107,15 +127,28 @@ async function run(operation, errorElement = notice) {
     }
 }
 
-pair.addEventListener('submit', event => {
-    event.preventDefault();
-    if (state !== 'unpaired' && !pairingAgain) return;
-    const code = pair.elements.code.value.trim();
-    void run(async () => {
-        await api('pair', {code});
+function clearLaunchCode() {
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+}
+
+function pairWithCode(code) {
+    return run(async () => {
+        try {
+            await api('pair', {code});
+        } catch (error) {
+            if (error.status === 410) clearLaunchCode();
+            throw error;
+        }
+        clearLaunchCode();
         pairingAgain = false;
         pair.reset();
     });
+}
+
+pair.addEventListener('submit', event => {
+    event.preventDefault();
+    if (state !== 'unpaired' && !pairingAgain) return;
+    void pairWithCode(pair.elements.code.value.trim());
 });
 
 request.addEventListener('submit', event => {
@@ -172,12 +205,7 @@ exitForm.addEventListener('submit', event => {
 });
 
 render();
-await refresh();
-if (pairingCode && ['unpaired', 'closed', 'revoked'].includes(state)) {
-    pairingAgain = state !== 'unpaired';
-    pair.elements.code.value = pairingCode;
-    pair.requestSubmit();
-}
+void refresh();
 setInterval(refresh, 6500);
 addEventListener('online', refresh);
 addEventListener('offline', () => { online = false; render(); });
