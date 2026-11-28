@@ -45,6 +45,14 @@ jobs:
           fixture="$(mktemp -d)"
           trap 'rm -rf "$fixture"' EXIT
           php tests/staging-calendar-storage.php "$fixture"
+      - name: Test Staging client booking flow
+        if: github.ref_name == 'Staging'
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l public_html/dj-desk/api/index.php
+          php -l public_html/dj-desk/api/Auth.php
+          php tests/staging-client-booking.php
       - name: Check deployment configuration
         env:
           FTP_HOST: ${{ secrets.SITE_FTPS_HOST }}

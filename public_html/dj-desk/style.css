@@ -346,3 +346,17 @@ img[data-addon-photo]{cursor:zoom-in}img[data-addon-photo]:focus-visible{outline
 .client-plan-billing dt,.client-plan-billing small {color:var(--muted)}
 .client-plan-billing dd {margin:3px 0 0;font-weight:700}
 .client-plan-billing small {display:block;font-weight:400}
+
+.booking-progress {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:0;margin:0 0 24px;list-style:none}
+.booking-progress li {display:grid;grid-template-columns:auto 1fr;align-items:center;gap:3px 9px;padding:12px;border:1px solid #42493c;border-radius:10px}
+.booking-progress li[aria-current="step"] {border-color:var(--lime);background:#202914}
+.booking-progress li > span {display:grid;place-items:center;grid-row:span 2;width:26px;height:26px;border-radius:50%;background:#374130}
+.booking-progress li[aria-current="step"] > span {background:var(--lime);color:#151b10}
+.booking-progress small {color:var(--muted)}
+.booking-retainer h2 strong {color:var(--lime);margin-inline-start:8px}
+.booking-retainer .actions {margin-top:16px}
+@media(max-width:520px) {
+ .booking-progress {gap:6px}
+ .booking-progress li {grid-template-columns:1fr;gap:4px;padding:8px;font-size:.86rem}
+ .booking-progress li > span {grid-row:auto}
+}

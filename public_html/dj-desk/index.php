@@ -47,7 +47,7 @@ if (!$isResetRequested && !empty($config['configured'])) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title><?php echo htmlspecialchars($brandName); ?> · Live Event Desk</title>
-    <link rel="stylesheet" href="./style.css?v=219">
+    <link rel="stylesheet" href="./style.css?v=220">
     <link rel="stylesheet" href="./music-performance.css?v=3">
     <script>
         window.djDeskConfig = {
@@ -60,7 +60,7 @@ if (!$isResetRequested && !empty($config['configured'])) {
             tipLink: <?php echo json_encode($tipLink); ?>
         };
     </script>
-    <script type="module" src="./app.js?v=264"></script>
+    <script type="module" src="./app.js?v=265"></script>
 <link rel="stylesheet" href="/back-to-top.css?v=2"></head>
 <body>
     <aside>

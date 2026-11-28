@@ -139,6 +139,8 @@ function require_admin(): array {
     return $session;
 }
 
+require_once __DIR__ . '/ClientBooking.php';
+
 // Method & Route parsing
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'OPTIONS') {
@@ -913,7 +915,11 @@ if ($path === 'portal/events' && $method === 'GET') {
         $results = [];
         foreach ($eIds as $eid) {
             $ev = DJ_Database::get_event($eid);
-            if ($ev) $results[] = $ev;
+            if ($ev) {
+                $ev['accessMode'] = DJ_ClientBooking::access($session['user'], $ev);
+                $ev['bookingStep'] = DJ_ClientBooking::step($ev, $ev['accessMode']);
+                $results[] = $ev;
+            }
         }
         usort($results, fn($a, $b) => strcmp($a['date'] ?? '', $b['date'] ?? ''));
         json_response($results);
@@ -932,14 +938,11 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/plan$#', $path, $m)) {
     if (!$event) json_error('Event not found', 404);
 
     if ($session['user']['role'] !== 'admin') {
-        $email = (string)($session['user']['email'] ?? '');
-        $isPrimary = $email !== '' && strcasecmp($email, (string)($event['client']['email'] ?? '')) === 0;
-        $memberships = DJ_Database::get_table_name('memberships');
-        if (!$isPrimary && !DJ_Database::get_var(
-            "SELECT 1 FROM $memberships WHERE event_id = ? AND user_id = ?",
-            [$id, $session['user']['id']]
-        )) {
-            json_error('Planner access required', 403);
+        $access = DJ_ClientBooking::access($session['user'], $event);
+        if ($access !== 'planner') json_error('Planner access required', 403);
+        $step = DJ_ClientBooking::step($event, $access);
+        if ($step['stage'] !== 'planning') {
+            json_error('The planner opens after your contract is signed and your retainer is confirmed.', 403);
         }
     }
 
@@ -1114,7 +1117,10 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
     $disclosure = 'Electronic signing is provided for your convenience. You may download a copy before and after signing.';
 
     if ($method === 'GET') {
-        require_auth();
+        $session = $m[1] === 'admin' ? require_admin() : require_auth();
+        $event = DJ_Database::get_event($id);
+        if (!$event) json_error('Event not found', 404);
+        if (!DJ_ClientBooking::access($session['user'], $event)) json_error('Contract access required', 403);
         $rows = DJ_Database::get_results(
             "SELECT * FROM $contracts_table WHERE event_id = ? ORDER BY revision DESC",
             [$id]
@@ -1147,6 +1153,7 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
 
         json_response([
             'contracts' => $records,
+            'canSign' => DJ_ClientBooking::canSign($session['user'], $records[0] ?? null),
             'acceptance' => $acceptance,
             'disclosure' => $disclosure,
             'contacts' => $contacts,
@@ -1249,33 +1256,64 @@ if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts$#', $path, $m)) {
     }
 }
 
-if (preg_match('#^portal/events/([a-f0-9-]+)/contracts/([a-f0-9-]+)/sign$#', $path, $m)) {
+if ($method === 'POST' && preg_match('#^portal/events/([a-f0-9-]+)/contracts/([a-f0-9-]+)/sign$#', $path, $m)) {
     require_db();
+    $session = require_auth();
+    if (empty($session['csrf']) || !hash_equals($session['csrf'], (string)($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) {
+        json_error('Session validation failed. Refresh and try again.', 403);
+    }
     $id = $m[1];
+    $event = DJ_Database::get_event($id);
+    if (!$event) json_error('Event not found', 404);
+    if (!DJ_ClientBooking::access($session['user'], $event)) json_error('Contract access required', 403);
     $contractId = $m[2];
     $contracts_table = DJ_Database::get_table_name('contracts');
     $signatures_table = DJ_Database::get_table_name('signatures');
 
-    $c = DJ_Database::get_row("SELECT * FROM $contracts_table WHERE id = ? AND event_id = ?", [$contractId, $id]);
-    if (!$c || $c['status'] !== 'Issued') {
+    $c = DJ_Database::get_row("SELECT * FROM $contracts_table WHERE event_id = ? ORDER BY revision DESC LIMIT 1", [$id]);
+    if (!$c || $c['id'] !== $contractId || $c['status'] !== 'Issued') {
         json_error('Contract is no longer awaiting signature', 409);
     }
-
-    $session = current_session();
+    $c['snapshot'] = json_decode($c['snapshot'], true) ?: [];
+    if (!DJ_ClientBooking::canSign($session['user'], $c)) json_error('Only the designated signer can sign this contract.', 403);
+    if (!is_string($input['hash'] ?? null) || !hash_equals($c['hash'], $input['hash'])) {
+        json_error('The contract has changed. Refresh to review the latest version.', 409);
+    }
+    $name = is_string($input['name'] ?? null) ? trim($input['name']) : '';
+    if ($name === '' || strlen($name) > 800 || ($input['agree'] ?? null) !== true
+        || ($input['electronicConsent'] ?? null) !== true || ($input['demoAcknowledged'] ?? null) !== true) {
+        json_error('Enter your name and confirm the signing statements.', 422);
+    }
+    if (($c['snapshot']['event']['type'] ?? '') === 'School dance'
+        && (empty($input['title']) || empty($input['organization']) || ($input['authority'] ?? null) !== true)) {
+        json_error('Enter your title and organization and confirm your signing authority.', 422);
+    }
     $signature = [
         'method' => 'electronic',
-        'name' => trim((string)($input['name'] ?? '')),
+        'name' => $name,
         'email' => $session['user']['email'] ?? '',
         'signedAt' => DJ_Database::now(),
         'contractHash' => $c['hash']
     ];
 
-    DJ_Database::insert($signatures_table, [
-        'contract_id' => $contractId,
-        'body' => json_encode($signature)
-    ]);
-
-    DJ_Database::update($contracts_table, ['status' => 'Signed'], ['id' => $contractId]);
+    $pdo = DJ_Database::pdo();
+    $pdo->beginTransaction();
+    try {
+        $updated = DJ_Database::update($contracts_table, ['status' => 'Signed'], [
+            'id' => $contractId, 'event_id' => $id, 'status' => 'Issued'
+        ]);
+        if (!$updated) {
+            $pdo->rollBack();
+            json_error('Contract is no longer awaiting signature', 409);
+        }
+        if (!DJ_Database::insert($signatures_table, ['contract_id' => $contractId, 'body' => json_encode($signature, JSON_THROW_ON_ERROR)])) {
+            throw new RuntimeException('Signature could not be saved.');
+        }
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        json_error('Your signature could not be saved. Refresh and try again.', 500);
+    }
     json_response(['ok' => true]);
 }
 
@@ -1289,9 +1327,13 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/contracts/([a-f0-9-]+)/void$#', $pat
     json_response(['ok' => true]);
 }
 
-if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts/([a-f0-9-]+)/download$#', $path, $m)) {
+if ($method === 'GET' && preg_match('#^(admin|portal)/events/([a-f0-9-]+)/contracts/([a-f0-9-]+)/download$#', $path, $m)) {
     require_db();
+    $session = $m[1] === 'admin' ? require_admin() : require_auth();
     $id = $m[2];
+    $event = DJ_Database::get_event($id);
+    if (!$event) json_error('Event not found', 404);
+    if (!DJ_ClientBooking::access($session['user'], $event)) json_error('Contract access required', 403);
     $contractId = $m[3];
     $contracts_table = DJ_Database::get_table_name('contracts');
     $signatures_table = DJ_Database::get_table_name('signatures');
@@ -2140,7 +2182,7 @@ if ($path === 'admin/requests' && $method === 'GET') {
             $workflow = [
                 'stage' => ($ev && ($ev['status'] ?? '') === 'Confirmed') ? 'Confirmed booking' : 'Awaiting contract & retainer',
                 'depositReceived' => (float)($ev['depositReceived'] ?? 0),
-                'planningUnlocked' => ($ev && ($ev['contractStatus'] ?? '') === 'Signed')
+                'planningUnlocked' => ($ev && DJ_ClientBooking::step($ev, 'planner')['stage'] === 'planning' && ($ev['contractStatus'] ?? '') === 'Signed')
             ];
         }
 
@@ -2513,13 +2555,22 @@ function get_stripe_data(string $eventId): array {
 
 if (preg_match('#^(admin|portal)/events/([a-f0-9-]+)/stripe$#', $path, $m)) {
     require_db();
-    require_auth();
+    $session = $m[1] === 'admin' ? require_admin() : require_auth();
     $id = $m[2];
     $event = DJ_Database::get_event($id);
     if (!$event) json_error('Event not found', 404);
 
     if ($method === 'GET') {
-        json_response(get_stripe_data($id));
+        if ($session['user']['role'] !== 'admin') {
+            $access = DJ_ClientBooking::access($session['user'], $event);
+            if ($access !== 'planner') json_error('Payment access required', 403);
+            if (DJ_ClientBooking::step($event, $access)['stage'] === 'contract') {
+                json_error('The retainer is available after your contract is signed.', 403);
+            }
+        }
+        $data = get_stripe_data($id);
+        $data['event'] = ['paid' => $event['paid'] ?? 0, 'depositReceived' => $event['depositReceived'] ?? 0];
+        json_response($data);
     } elseif ($method === 'POST') {
         require_admin();
         $kind = $input['kind'] ?? 'retainer';

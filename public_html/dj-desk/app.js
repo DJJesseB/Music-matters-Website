@@ -9,7 +9,7 @@ import {standardDeposit,depositPolicy,calculateDeposit} from './pricing.js?v=180
 import {mountPackageEditor} from './package-ui.js?v=220';
 import {formMessage,installFormValidation} from './form-feedback.js?v=181';
 import {timeField,bindTimeFields} from './time-input.js?v=180';
-import {portalUI} from './portal-ui.js?v=248';
+import {portalUI} from './portal-ui.js?v=249';
 import {bindPlaybookButton} from './playbook.js?v=1';
 import {mountSchoolInvoices} from './school-invoice-ui.js?v=233';
 import {mountEventPayments} from './event-payments-ui.js?v=3';
@@ -218,7 +218,7 @@ function editor(e, initialTab='overview'){
 }
 const music=musicUI({api,app,head,esc,date,message});
 const booking=bookingUI({api,app,head,esc,field,area,money,message});
-const portal=portalUI({api,app,head,esc,field,area,money,date,message,onDirty:value=>dirty=value,onLogin:async result=>{auth=result;dirty=false;shell();if(result.user.role==='admin')options=await api('options');const target=result.user.role==='admin'?(/^#(?:event\/[^/?]+|music-admin(?:\/[^/?]+)?)$/.test(location.hash)?location.hash:'#dashboard'):'#portal';if(location.hash===target)await route();else location.hash=target;}});
+const portal=portalUI({api,app,head,esc,field,area,money,date,message,onDirty:value=>dirty=value,onLogin:async result=>{auth=result;dirty=false;shell();if(result.user.role==='admin')options=await api('options');const target=result.user.role==='admin'?(/^#(?:event\/[^/?]+|music-admin(?:\/[^/?]+)?)$/.test(location.hash)?location.hash:'#dashboard'):(result.eventId?'#portal/'+encodeURIComponent(result.eventId):/^#portal\/[a-f0-9-]+$/.test(location.hash)?location.hash:'#portal');if(location.hash===target||result.eventId){history.replaceState(null,'',target);await route();}else location.hash=target;}});
 const setup=setupUI({api,app,head,esc,money,message,onComplete:async session=>{auth=session;dirty=false;shell();if(session.user?.role==='admin')options=await api('options');location.hash='#dashboard';await route();}});
 function shell(){const nav=document.querySelector('nav');nav.innerHTML=(auth.user?(auth.user.role==='admin'?'<a href="#dashboard">◈ &nbsp; Dashboard</a><a href="#events">▦ &nbsp; Events</a><a href="#new">＋ &nbsp; New booking</a><a href="#requests">◇ &nbsp; Date requests</a><a href="#music-admin">♫ &nbsp; Song requests</a><a href="#finance">＄ &nbsp; Financial Center</a><a href="#social-media">▤ &nbsp; Social Media</a><a href="#insurance">▣ &nbsp; Insurance</a><a href="#settings">⚙ &nbsp; Settings</a>':'<a href="#portal">◈ &nbsp; My events</a>')+'<button type="button" class="secondary" id="logout">Sign out</button>':'');document.querySelector('header').firstElementChild.textContent=auth.user?(auth.user.role==='admin'?'ADMIN WORKSPACE':'CLIENT PORTAL'):(window.djDeskConfig?.brandName?(window.djDeskConfig.brandName.toUpperCase()+' · LIVE DESK'):'LIVE EVENT WORKSPACE');if(auth.user)document.querySelector('#logout').onclick=async()=>{if(dirty&&!confirm('Discard unsaved changes and sign out?'))return;try{await api('auth/logout','POST',{});auth={user:null};dirty=false;history.replaceState(null,'',location.pathname+'#dashboard');shell();portal.login();}catch(error){message('Sign-out failed: '+error.message,true);}};}
 let previous=location.hash||'#dashboard',ignoring=false;

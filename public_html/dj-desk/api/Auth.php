@@ -204,7 +204,9 @@ class DJ_Auth {
         // Delete invitation
         DJ_Database::delete($inv_table, ['token' => $token]);
 
-        return self::login($email, $password);
+        $session = self::login($email, $password);
+        $session['eventId'] = $inv['event_id'];
+        return $session;
     }
 
     public static function get_event_members(string $eventId): array {
