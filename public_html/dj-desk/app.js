@@ -1,5 +1,5 @@
 import {mountStripePayments} from './stripe-ui.js?v=181';
-import {mountFollowups} from './followup-ui.js?v=182';
+import {mountFollowups} from './followup-ui.js?v=183';
 import {paymentGuide} from './payment-guide.js?v=221';
 import './lighting-addon.js?v=211';
 import './addon-photo-preview.js?v=205';
@@ -110,7 +110,7 @@ function eventNextActions(e) {
 function eventDisclosure(name, body) {
  return `<details class="event-hq-disclosure"><summary>${name}</summary>${body}</details>`;
 }
-function editor(e, initialTab='overview'){
+function editor(e, initialTab='overview', closeoutNote){
  const isNew=!e;
  e=e||{name:'',type:'Wedding',status:'Inquiry',client:{},amount:0,paid:0,depositRequired:0,depositReceived:0,plannerStatus:'Not started',musicStatus:'Not started',contractStatus:'Not sent'};
  tab=initialTab;
@@ -186,7 +186,7 @@ function editor(e, initialTab='overview'){
   activity.dataset.section='activity';
   activity.innerHTML=`<h2>Planner activity</h2><p>${e.plannerLastSavedAt?`Last saved ${esc(new Date(e.plannerLastSavedAt).toLocaleString())}`:'No planner save recorded.'}</p>`;
   app.append(activity);
-  mountFollowups({app,event:e,api,esc,message,workspace:'activity',onClosed:saved=>{dirty=false;editor(saved,tab);}}).catch(error=>message(error.message,true));
+  mountFollowups({app,event:e,api,esc,message,workspace:'activity',isBookingDirty:()=>dirty,closeoutNote,onClosed:(saved,note)=>{dirty=false;editor(saved,tab,note);}}).catch(error=>message(error.message,true));
  }
  const tabs=()=>{
   app.querySelectorAll('[data-section]').forEach(el=>{

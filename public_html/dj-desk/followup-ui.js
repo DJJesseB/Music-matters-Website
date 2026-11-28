@@ -1,4 +1,4 @@
-export async function mountFollowups({app,event,api,esc,message,onClosed,workspace='finance'}){
+export async function mountFollowups({app,event,api,esc,message,onClosed,workspace='finance',isBookingDirty=()=>false,closeoutNote}){
  const root=document.createElement('section');root.className='card followup-workspace';root.dataset.section=workspace;root.hidden=true;root.innerHTML='<h2>Follow-ups & close-out</h2><p>Loading follow-up settings…</p>';app.append(root);
  const path='admin/events/'+event.id+'/followups';
  async function render(){
@@ -8,15 +8,41 @@ export async function mountFollowups({app,event,api,esc,message,onClosed,workspa
   root.querySelector('[data-followup-settings]').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget;try{await api(path,'PUT',{enabled:form.elements.enabled.checked,kind:form.elements.kind.value,details:form.elements.details.value,afterDays:Number(form.elements.afterDays.value),repeatDays:Number(form.elements.repeatDays.value),maxReminders:Number(form.elements.maxReminders.value)});await render();message('Follow-up settings saved. Drafts are prepared locally; no email is sent automatically.');}catch(error){message(error.message,true);}};
   const drafts=root.querySelector('[data-followup-drafts]');drafts.innerHTML='<h3>Reminder drafts & history</h3>'+(data.drafts.length?data.drafts.map(d=>`<details class="followup-draft" ${d.status==='Needs review'?'open':''} data-draft="${d.id}"><summary>${esc(d.kind==='deposit'?'retainer':d.kind)} · ${esc(d.status)} · ${esc(new Date(d.createdAt).toLocaleString())}</summary><p>From: <strong>${esc(d.from||'djgourmet@me.com')}</strong><br>To: <strong>${esc(d.to)}</strong></p><label>Subject<input data-subject maxlength="300" value="${esc(d.subject)}" ${d.status==='Needs review'?'':'readonly'}></label><label>Message<textarea data-body maxlength="8000" ${d.status==='Needs review'?'':'readonly'}>${esc(d.body)}</textarea></label>${d.status==='Needs review'?'<div class="followup-actions"><button type="button" data-email>Open email draft ↗</button><button type="button" class="secondary" data-copy>Copy message</button><button type="button" class="secondary" data-draft-status="Shared manually">I sent this manually</button><button type="button" class="secondary" data-draft-status="Dismissed">Dismiss</button></div><small>Opening an email draft does not send it or mark it sent. Mark it only after you send it in your email app.</small>':''}</details>`).join(''):'<p>No reminder drafts yet.</p>');
   for(const d of data.drafts.filter(d=>d.status==='Needs review')){const row=drafts.querySelector('[data-draft="'+d.id+'"]'),values=()=>({subject:row.querySelector('[data-subject]').value,body:row.querySelector('[data-body]').value});row.querySelector('[data-email]').onclick=()=>{const v=values();if(!v.subject.trim()||/[\r\n]/.test(v.subject)||!v.body.trim())return message('Enter a single-line subject and message.',true);location.href='mailto:'+encodeURIComponent(d.to)+'?subject='+encodeURIComponent(v.subject)+'&body='+encodeURIComponent(v.body);};row.querySelector('[data-copy]').onclick=async()=>{try{const v=values();await navigator.clipboard.writeText('To: '+d.to+'\nSubject: '+v.subject+'\n\n'+v.body);message('Reminder copied. Paste it into your email app.');}catch{row.querySelector('[data-body]').select();message('Select and copy the message, then paste it into your email.');}};row.querySelectorAll('[data-draft-status]').forEach(button=>button.onclick=async()=>{try{await api(path+'/'+d.id,'POST',{...values(),status:button.dataset.draftStatus});await render();message('Reminder history updated.');}catch(error){message(error.message,true);}});}
+  const note=root.querySelector('[data-close-reason]');
+  if(closeoutNote!==undefined){
+   note.value=closeoutNote;
+   note.closest('details').open=true;
+   closeoutNote=undefined;
+  }
   const closeButtons=[...root.querySelectorAll('[data-close-event]')];
   for(const button of closeButtons)button.onclick=async()=>{
-   if(app.querySelector('#saveState')?.textContent==='Unsaved changes')return message('Save your booking changes before closing the event.',true);
+   if(isBookingDirty())return message('Save your booking changes before closing the event.',true);
    closeButtons.forEach(item=>item.disabled=true);
    try{
     const status=button.dataset.closeEvent;
-    const result=await api('admin/events/'+event.id+'/close','POST',{
-     version:event.version,status,reason:root.querySelector('[data-close-reason]').value,
-    });
+    const reason=note.value;
+    const close=async()=>{
+     const current=await api('events/'+event.id);
+     if(!root.isConnected||isBookingDirty())return null;
+     if(current.status===status){
+      onClosed(current);
+      message('Event is already '+status.toLowerCase()+'.');
+      return null;
+     }
+     if(current.status!==event.status){
+      onClosed(current,reason);
+      message('The booking state changed to '+current.status+'. Review it before closing the event.');
+      return null;
+     }
+     return api('admin/events/'+event.id+'/close','POST',{version:current.version,status,reason});
+    };
+    let result;
+    try{result=await close();}
+    catch(error){
+     if(error.status!==409)throw error;
+     result=await close();
+    }
+    if(!result)return;
     if(result.event?.id!==event.id||result.event.status!==status){
      throw Error('The booking status could not be verified. Reopen the booking before trying again.');
     }
