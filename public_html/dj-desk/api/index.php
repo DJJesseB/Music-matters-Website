@@ -2484,7 +2484,7 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/followups$#', $path, $m)) {
     json_response([
         'settings' => $settings,
         'drafts' => $drafts,
-        'closeouts' => []
+        'closeouts' => array_reverse(DJ_Database::get_event($id, true)['_closeouts'] ?? [])
     ]);
 }
 
@@ -2514,14 +2514,29 @@ if (preg_match('#^admin/events/([a-f0-9-]+)/followups/([a-f0-9-]+)$#', $path, $m
 
 if (preg_match('#^admin/events/([a-f0-9-]+)/close$#', $path, $m)) {
     require_db();
-    require_admin();
+    $session = require_admin();
+    if ($method !== 'POST') json_error('Use POST to close an event.', 405);
+    if (empty($session['csrf']) || !hash_equals($session['csrf'], (string)($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) {
+        json_error('Session validation failed. Refresh and try again.', 403);
+    }
     $id = $m[1];
+    $status = $input['status'] ?? 'Completed';
+    if (!in_array($status, ['Canceled', 'Archived', 'Completed'], true)) json_error('Choose a valid close-out status.', 422);
+    $version = $input['version'] ?? null;
+    if (!is_int($version) || $version < 1) json_error('Reload this booking before closing it.', 422);
+    $reason = $input['reason'] ?? '';
+    if (!is_string($reason) || mb_strlen($reason) > 1000) json_error('Enter a close-out note of up to 1,000 characters.', 422);
+
     $event = DJ_Database::get_event($id);
     if (!$event) json_error('Event not found', 404);
-
-    $event['status'] = $input['status'] ?? 'Completed';
-    $saved = DJ_RequestLifecycle::saveBooking($event, $id);
-    json_response($saved);
+    $event['status'] = $status;
+    $event['version'] = $version;
+    $saved = DJ_RequestLifecycle::saveBooking($event, $id, [
+        'status' => $status, 'reason' => trim($reason), 'at' => gmdate(DATE_ATOM),
+    ]);
+    if (isset($saved['error'])) json_error($saved['error'], $saved['code'] ?? 400);
+    if (empty($saved['id'])) json_error('The saved booking could not be loaded. Refresh to verify its status.', 500);
+    json_response(['event' => $saved, 'calendarSync' => DJ_GoogleCalendar::onEventSaved($saved)]);
 }
 
 // -------------------------------------------------------------

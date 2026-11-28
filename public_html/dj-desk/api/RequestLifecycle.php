@@ -100,7 +100,7 @@ final class DJ_RequestLifecycle {
         return DJ_Database::get_event($id);
     }
 
-    public static function saveBooking(array $input, string $id): array {
+    public static function saveBooking(array $input, string $id, ?array $closeout = null): array {
         self::install();
         $pdo = DJ_Database::pdo();
         $closing = in_array($input['status'] ?? '', ['Canceled', 'Archived', 'Completed'], true);
@@ -125,7 +125,7 @@ final class DJ_RequestLifecycle {
             if ($closing) {
                 // Booking closure already uses its own transaction to revoke paired kiosks.
                 $pdo->commit();
-                return DJ_Database::save_event($input, $id);
+                return DJ_Database::save_event($input, $id, $closeout);
             }
             $saved = DJ_Database::save_event($input, $id);
             $pdo->commit();

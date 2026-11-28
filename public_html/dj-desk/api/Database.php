@@ -1217,7 +1217,7 @@ class DJ_Database {
         self::set_meta('seeded', '1');
     }
 
-    public static function get_event(string $id): ?array {
+    public static function get_event(string $id, bool $includeCloseouts = false): ?array {
         $events = self::get_table_name('events');
         $clients = self::get_table_name('clients');
         $contracts = self::get_table_name('contracts');
@@ -1234,6 +1234,8 @@ class DJ_Database {
         if (!$row) return null;
 
         $body = json_decode($row['body'], true) ?: [];
+
+        if (!$includeCloseouts) unset($body['_closeouts']);
 
         // Check contracts table for live status
         $contract = self::get_row(
@@ -1288,16 +1290,44 @@ class DJ_Database {
         return $results;
     }
 
-    public static function save_event(array $input, ?string $id = null): array {
+    public static function save_event(array $input, ?string $id = null, ?array $closeout = null): array {
         $events_table = self::get_table_name('events');
         $clients_table = self::get_table_name('clients');
 
-        $old = $id ? self::get_event($id) : null;
+        $old = $id ? self::get_event($id, true) : null;
         if ($id && !$old) {
             return ['error' => 'Event not found', 'code' => 404];
         }
         if ($old && isset($input['version']) && (int)$input['version'] !== (int)$old['version']) {
             return ['error' => 'This event changed. Reload before saving.', 'code' => 409];
+        }
+
+        if ($closeout !== null) {
+            require_once __DIR__ . '/RequestKiosk.php';
+            DJ_RequestKiosk::install();
+            $pdo = self::pdo();
+            $pdo->beginTransaction();
+            try {
+                DJ_RequestKiosk::lockEvent($id);
+                $row = self::get_row("SELECT body, version FROM $events_table WHERE id = ? FOR UPDATE", [$id]);
+                if (!$row || (int)$row['version'] !== (int)$input['version']) {
+                    $pdo->rollBack();
+                    return ['error' => 'This event changed. Reload before saving.', 'code' => 409];
+                }
+                $body = json_decode($row['body'], true, 512, JSON_THROW_ON_ERROR);
+                $body['status'] = $closeout['status'];
+                $body['_closeouts'][] = $closeout;
+                DJ_RequestKiosk::revokeEvent($id);
+                self::update($events_table, [
+                    'body' => json_encode($body, JSON_THROW_ON_ERROR),
+                    'version' => (int)$row['version'] + 1,
+                ], ['id' => $id]);
+                $pdo->commit();
+            } catch (Throwable $error) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                throw $error;
+            }
+            return self::get_event($id) ?: [];
         }
 
         $clientId = $old ? $old['client']['id'] : self::uuid();
@@ -1315,7 +1345,9 @@ class DJ_Database {
         self::replace($clients_table, $clientData);
 
         $body = $input;
-        unset($body['id'], $body['client'], $body['version'], $body['createdAt']);
+        unset($body['id'], $body['client'], $body['version'], $body['createdAt'], $body['_closeouts']);
+        $closeouts = $old['_closeouts'] ?? [];
+        if ($closeouts) $body['_closeouts'] = $closeouts;
 
         $subtotal = (float)($body['weddingPackage']['total'] ?? ($body['schoolPackage']['total'] ?? ($body['privatePackage']['total'] ?? ($body['subtotal'] ?? ($body['amount'] ?? 0)))));
         $discount = (float)($body['discount'] ?? 0);

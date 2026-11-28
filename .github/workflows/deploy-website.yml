@@ -54,6 +54,8 @@ jobs:
           php -l public_html/dj-desk/api/Auth.php
           php -l public_html/dj-desk/api/SchoolInvoices.php
           php -l public_html/dj-desk/api/Mailer.php
+          php -l public_html/dj-desk/api/Database.php
+          php -l public_html/dj-desk/api/RequestLifecycle.php
           php tests/staging-client-booking.php
       - name: Check deployment configuration
         env:

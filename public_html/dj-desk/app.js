@@ -1,5 +1,5 @@
 import {mountStripePayments} from './stripe-ui.js?v=181';
-import {mountFollowups} from './followup-ui.js?v=181';
+import {mountFollowups} from './followup-ui.js?v=182';
 import {paymentGuide} from './payment-guide.js?v=221';
 import './lighting-addon.js?v=211';
 import './addon-photo-preview.js?v=205';
