@@ -23,10 +23,11 @@ const requestMessages = {
 const requestLabels = {standby: 'Standby', active: 'Accepting requests', paused: 'Paused', closed: 'Requests closed', archived: 'Archived'};
 
 export function musicUI({api, app, head, esc, date, message}) {
-    let timer, generation = 0;
+    let timer, leaveFocus, generation = 0;
     function stop() {
         generation++;
         clearInterval(timer);
+        leaveFocus?.();
         document.body.classList.remove('music-performance-mode');
     }
     window.addEventListener('hashchange', stop);
@@ -280,6 +281,7 @@ export function musicUI({api, app, head, esc, date, message}) {
                         <button type="button" class="secondary" data-end>End requests</button>
                         <button type="button" class="secondary" data-qr>Show guest QR</button>
                         <button type="button" class="secondary" data-launch-kiosk>Launch Request Kiosk</button>
+                        <a class="button secondary" href="#kiosk-instructions" data-kiosk-help>Kiosk instructions</a>
                         <button type="button" class="secondary" data-sort-votes aria-pressed="false">Sort incoming by votes</button>
                         <button type="button" class="secondary" data-fullscreen>Full screen</button>
                         <button type="button" class="secondary" data-reset-requests>Reset request list</button>
@@ -332,6 +334,17 @@ export function musicUI({api, app, head, esc, date, message}) {
                         <button type="submit" class="secondary" autofocus>Cancel</button>
                         <button type="button" data-confirm-reset>Yes, reset request list</button>
                     </form>
+                </dialog>
+                <dialog class="music-qr-dialog" id="kiosk-instructions" aria-labelledby="kiosk-instructions-title">
+                    <h2 id="kiosk-instructions-title">Set up the request kiosk</h2>
+                    <ol>
+                        <li>On your admin iPad, open the event in Song Requests and check the event request schedule.</li>
+                        <li>Tap Launch Request Kiosk, enter a 6–12 digit exit PIN, then tap Create pairing code. Keep the request desk open on your admin iPad.</li>
+                        <li>On the guest iPad, open the <a href="./kiosk.html" target="_blank" rel="noopener">kiosk page in Safari</a>. Enter the six-digit code within five minutes and tap Pair kiosk. Generate a fresh code for each guest device.</li>
+                        <li>Standby means the device is paired. During the request window, send a test song and check that it appears in the admin queue.</li>
+                    </ol>
+                    <p>To release a guest iPad, tap Admin exit on that device and enter the exit PIN.</p>
+                    <form method="dialog"><button type="submit" class="secondary">Close instructions</button></form>
                 </dialog>
                 <dialog class="music-qr-dialog" data-kiosk-dialog aria-labelledby="kiosk-launch-title">
                     <h2 id="kiosk-launch-title">Launch Request Kiosk</h2>
@@ -697,15 +710,32 @@ export function musicUI({api, app, head, esc, date, message}) {
             sort.setAttribute('aria-pressed', String(sortByVotes));
             render();
         };
+        find('[data-kiosk-help]').onclick = event => {
+            event.preventDefault();
+            find('#kiosk-instructions').showModal();
+        };
         const fullscreen = find('[data-fullscreen]');
-        fullscreen.hidden = !booth.requestFullscreen;
-        fullscreen.onclick = async () => {
-            try {
-                if (document.fullscreenElement) await document.exitFullscreen();
-                else await booth.requestFullscreen();
-            } catch {
-                message('Full screen is unavailable on this device.', true);
+        const focusView = document.createElement('dialog');
+        focusView.className = 'music-focus-view';
+        focusView.setAttribute('aria-label', 'Request desk full screen');
+        booth.after(focusView);
+        focusView.addEventListener('cancel', event => event.preventDefault());
+        fullscreen.onclick = () => {
+            if (leaveFocus) {
+                leaveFocus();
+                fullscreen.focus();
+                return;
             }
+            focusView.append(booth);
+            fullscreen.textContent = 'Exit full screen';
+            focusView.showModal();
+            fullscreen.focus();
+            leaveFocus = () => {
+                leaveFocus = undefined;
+                focusView.close();
+                focusView.before(booth);
+                fullscreen.textContent = 'Full screen';
+            };
         };
         render();
         timer = setInterval(() => {

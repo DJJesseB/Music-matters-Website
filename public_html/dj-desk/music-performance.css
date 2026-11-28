@@ -74,7 +74,13 @@
 .music-qr-dialog [data-confirm-reset] { background: #b91c36; color: #fff; }
 .music-qr-dialog [data-confirm-reset]:hover:enabled { background: #99172c; }
 .music-qr-dialog [data-reset-error] { color: #ffabb9; }
-.music-booth:fullscreen { display: grid; align-content: start; padding: 1rem; overflow: auto; background: #0d0a12; }
+.music-focus-view {
+    position: fixed; inset: 0; margin: 0; width: 100%; height: 100%;
+    max-width: none; max-height: none; box-sizing: border-box; border: 0;
+    padding: 1rem; overflow: auto; overscroll-behavior: contain; background: #0d0a12;
+    color: #f4edf9;
+}
+.music-focus-view .music-booth { align-content: start; }
 .music-guest-history { list-style: none; padding: 0; margin: 0; }
 .music-guest-history li { padding: .7rem 0; border-top: 1px solid #554169; overflow-wrap: anywhere; }
 .music-guest-history li span, .music-guest-history li small { display: block; }

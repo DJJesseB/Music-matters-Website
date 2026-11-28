@@ -1,9 +1,14 @@
+import {schoolSongs, partySongs} from './request-songs.js?v=1';
+import {newId} from './request-id.js?v=180';
+
 const find = selector => document.querySelector(selector);
 const heading = find('#heading');
 const notice = find('#notice');
 const connection = find('#connection');
 const pair = find('#pair');
 const request = find('#request');
+const suggestions = find('#kiosk-suggestions');
+let isSchool = false;
 const confirmation = find('#confirmation');
 const exit = find('#exit');
 const exitDialog = find('#exit-dialog');
@@ -55,6 +60,7 @@ function render() {
     for (const form of [pair, request, exitForm]) {
         form.querySelector('button[type="submit"]').disabled = working || !online;
     }
+    if (state === 'active' && !finished && !confirmed) renderSuggestions();
     connection.textContent = finished ? '' : online ? 'Connected' : 'Reconnecting…';
     heading.textContent = finished ? 'Kiosk ended' : pairingAgain ? 'Pair request kiosk' : ({
         active: confirmed ? 'Request received' : 'What’s your song?',
@@ -66,6 +72,38 @@ function render() {
         revoked: 'Kiosk ended'
     })[state] || 'Song requests';
 }
+
+function renderSuggestions() {
+    const title = request.elements.title;
+    const artist = request.elements.artist;
+    const query = [title.value, artist.value].map(value => value.trim().toLowerCase());
+    const entries = (isSchool ? schoolSongs : partySongs).filter(([song, performer]) =>
+        song.toLowerCase().includes(query[0]) && performer.toLowerCase().includes(query[1])
+    ).slice(0, 5);
+    const key = JSON.stringify(entries);
+    if (suggestions.dataset.entries === key) return;
+    suggestions.dataset.entries = key;
+    suggestions.hidden = entries.length === 0;
+    suggestions.textContent = '';
+    if (!entries.length) return;
+    const label = document.createElement('h2');
+    label.textContent = 'Suggested songs';
+    suggestions.append(label);
+    for (const [song, performer] of entries) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = song + ' · ' + performer;
+        button.onclick = () => {
+            title.value = song;
+            artist.value = performer;
+            renderSuggestions();
+            request.querySelector('button[type="submit"]').focus();
+        };
+        suggestions.append(button);
+    }
+}
+
+request.addEventListener('input', renderSuggestions);
 
 function resetRequest() {
     clearTimeout(confirmationTimer);
@@ -87,7 +125,8 @@ async function refresh() {
             if (state !== 'active') resetRequest();
             notice.textContent = '';
         }
-        find('#school').hidden = !result.school;
+        isSchool = Boolean(result.school);
+        find('#school').hidden = !isSchool;
     } catch (error) {
         if (!working) {
             online = false;
@@ -161,7 +200,7 @@ request.addEventListener('submit', event => {
         return;
     }
     if (previousSubmission?.title !== title || previousSubmission?.artist !== artist) {
-        previousSubmission = {title, artist, key: crypto.randomUUID()};
+        previousSubmission = {title, artist, key: newId()};
     }
     void run(async () => {
         await api('requests', previousSubmission);
