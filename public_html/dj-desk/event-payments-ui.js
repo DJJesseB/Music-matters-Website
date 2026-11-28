@@ -3,19 +3,19 @@ export function mountEventPayments({root,event,api,esc,money,message,onUpdated})
   const dateValue=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
   const safe=esc;
   root.insertAdjacentHTML('beforeend',
-    '<section class="card event-manual-payments" data-event-payments>'+
+    '<section class="card event-manual-payments" data-section="finance" data-event-payments hidden>'+
       '<h3>Manual payment records</h3>'+
       '<p>Record a check when it arrives. A check changes the event balance only after you mark it cleared. Cash and money orders count immediately when received.</p>'+
       (event.type==='School dance'?'<p>Use the school invoice page for school checks.</p>':'')+
-      '<div class="grid" data-payment-form role="group" aria-label="Record a manual payment">'+
+      '<form class="grid" data-payment-form aria-label="Record a manual payment">'+
         '<label>Payment method<select data-payment-field="method"><option>Check</option><option>Cash</option><option>Money order</option></select></label>'+
         '<label>Amount ($)<input data-payment-field="amount" type="number" min="0.01" max="1000000" step="0.01" required></label>'+
         '<label>Date received<input data-payment-field="receivedOn" type="date" value="'+dateValue()+'" required></label>'+
         '<label>Apply payment to<select data-payment-field="appliesTo"><option value="balance">Event balance</option><option value="retainer">Unpaid retainer</option></select></label>'+
         '<label data-reference-label>Check number<input data-payment-field="reference" maxlength="100" required></label>'+
-        '<button class="button secondary" type="button" data-payment-submit>Record payment</button>'+
+        '<button class="button secondary" type="submit" data-payment-submit>Record payment</button>'+
         '<small data-payment-error role="status"></small>'+
-      '</div><div data-payment-list>Loading payment records…</div>'+
+      '</form><div data-payment-list>Loading payment records…</div>'+
     '</section>');
   const box=root.querySelector('[data-event-payments]');
   const form=box.querySelector('[data-payment-form]');
@@ -49,8 +49,10 @@ export function mountEventPayments({root,event,api,esc,money,message,onUpdated})
     });
   }
   method.dispatchEvent(new Event('change'));
-  form.querySelector('[data-payment-submit]').addEventListener('click',async()=>{
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
     const submit=form.querySelector('[data-payment-submit]'),error=box.querySelector('[data-payment-error]');
+    if(submit.disabled)return;
     submit.disabled=true;error.textContent='';
     try{
       const data=Object.fromEntries([...form.querySelectorAll('[data-payment-field]')].map(field=>[field.dataset.paymentField,field.value]));
